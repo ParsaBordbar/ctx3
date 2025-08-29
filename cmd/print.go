@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"file_tree/filetree"
 	"fmt"
 
+	"github.com/parsabordbar/ctx3/filetree"
 	"github.com/spf13/cobra"
 )
 
