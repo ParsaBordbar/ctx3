@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
-
+	"github.com/parsabordbar/ctx3/analyzer"
 	"github.com/spf13/cobra"
 )
 
@@ -14,6 +14,11 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Use 'filetree print [dir]' to print a file tree")
 	},
+}
+
+func init() {
+	contextCmd.Flags().BoolVarP(&analyzer.OutputJSON, "json", "j", false, "Output as JSON")
+	rootCmd.AddCommand(contextCmd)
 }
 
 func Execute() {
