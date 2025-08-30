@@ -1,5 +1,6 @@
 <p align="center">
   <img width="200" alt="ctx3" src="https://github.com/user-attachments/assets/02adb17c-9ca1-414d-ba68-dabd06ead509" />
-<p></p>
+</p>
+
 # CONTEXT TREE (CTX3)
 Is a Cli tool that helps you and your favorite LLM to understand the code base better!
