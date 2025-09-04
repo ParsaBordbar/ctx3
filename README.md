@@ -118,9 +118,9 @@ import (
 
 ## Future Updates
 
- - Support for Prompt Generations
- - Code-Base Tech Detection (Similar to github)
+- Support for Prompt Generations
+- Code-Base Tech Detection (Similar to github)
 - Gist (Code snipt extraction support)
 
 ## Controbutions 
-You can send Pull Requests and contact me if you'd like to to help me develop this tool.
+You can send Pull Requests and contact me
