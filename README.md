@@ -115,7 +115,7 @@ import (
     "github.com/parsabordbar/ctx3/filetree"
     "github.com/parsabordbar/ctx3/analyzer"
 )
-‍‍```
+```
 
 ## Future Updates
 
