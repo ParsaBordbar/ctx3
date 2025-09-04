@@ -16,7 +16,7 @@ func PrintTree(root string, indent string) {
 	for _, entry := range entries {
 		if entry.Name() != "node_modules" && entry.Name() != ".git" {
 			info, _ := os.Stat(filepath.Join(root, entry.Name()))
-			fmt.Println(indent + "|-- " + entry.Name() + fmt.Sprintf(" (%d bytes)", info.Size()))
+			fmt.Println(indent + "├── " + entry.Name() + fmt.Sprintf(" (%d bytes)", info.Size()))
 			if entry.IsDir() {
 				PrintTree(filepath.Join(root, entry.Name()), indent+"    ")
 			}
