@@ -104,6 +104,18 @@ Options:
 
 --help, -h → show help for a command
 
+## Using ctx3 as a Library
+
+Besides being a CLI tool, ctx3 can also be imported directly into your Go projects.  
+Both the `filetree` and `analyzer` packages are designed to be reusable.  
+You can pull them in with a standard Go import:
+
+```go
+import (
+    "github.com/parsabordbar/ctx3/filetree"
+    "github.com/parsabordbar/ctx3/analyzer"
+)
+
 ## Future Updates
 
  - Support for Prompt Generations
