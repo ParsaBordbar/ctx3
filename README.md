@@ -1,50 +1,114 @@
+
 <p align="center">
   <img width="200" alt="ctx3" src="https://github.com/user-attachments/assets/7cca9bd3-5587-4df0-a7c1-c5b4323d6a8e" />
 </p>
 
-# Context Tree (CTX3)
+# Context Tree (ctx3)
 
-Context Tree (ctx3) is a free, open source, tool, written in go that helps you and your favorite LLM to understand the code base better, by providing data about the structure of the code-base and its dependencies.
+**Context Tree (ctx3)** is a free, open-source CLI tool written in Go that helps you (and your favorite LLM) understand a codebase better by providing structured metadata about files and dependencies.
 
-# What Can It do!?
 
-ctx3 is a combination of two basic Ideas,  file tree cli tool that can help LLMs to understand the file hierarchy (Tree) and a brief over view of files (Context) !
-so simply its a cli tool that gives you meta data about your code-base via commands!
+##  What Can It Do?
 
-### File Tree 
-Prints Files Hierarchy, shows the project Structure
+ctx3 combines two core ideas:
 
-### Context 
-Provides Meta Data and summaries of the Dependencies and instructions of the code. Out puts a json-prompt that helps LLMs 
+1. **File Tree** – a CLI tool that shows the file hierarchy of your project.
+2. **Context** – provides metadata and summaries about files and dependencies.
 
-## How To Install
+Together, these help LLMs (and developers) reason about your codebase more effectively.
 
-For using ctx3 you need to have **Go** installed so if you don't have it consider installing it [from here.](https://go.dev/doc/install) 
+---
 
-Then you can install it with Go like this:
+###  File Tree
+<img width="463" height="409" alt="Screenshot" src="https://github.com/user-attachments/assets/3d2ab86c-4ee3-4e80-a7ef-35e9b1ddacbf" />
+
+Prints the file hierarchy of your project and shows the structure.
+
+### Context
+Outputs metadata (optionally as JSON) including file sizes, types, dependencies, and README contents.
+
+Example:
+
+```bash
+ctx3 context -j
+{
+  "root": ".",
+  "files": [
+    { "name": ".gitignore", "type": "gitignore", "size": 668 },
+    { "name": "README.md", "type": "md", "size": 253 },
+    { "name": "main.go", "type": "go", "size": 88 }
+  ],
+  "total_files": 11,
+  "total_dirs": 4,
+  "dependencies": ["github.com/spf13/cobra v1.9.1"]
+}
+```
+### Installation
+
+First, make sure you have Go installed. If not, follow the [Go installation guide](https://go.dev/doc/install).
+
+Then install ctx3 using:
 
 ```bash
 go install github.com/parsabordbar/ctx3@latest
 ```
 
-## How To Use
+Make sure ``$GOPATH/bin (or Go install dir) `` is in your ``PATH``.
+Now you can run:
 
-All your files and folders are presented as a tree in the file explorer. You can switch from one to another by clicking a file in the tree.
+```bash
+ctx3 --help
+```
+OR
+```bash
+ctx3 help
+```
 
-to see the file tree use:
+### Build From Source
+
+If you want to compile manually:
+
+#### 1- Clone The Repo:
+```
+git clone https://github.com/parsabordbar/ctx3.git
+```
+#### 2- Go To Repo:
+```
+cd ctx3
+```
+#### 3- Build:
+```
+go build -o ctx3
+```
+#### 4- Move To Path
+This will create a ctx3 binary in the current directory. Move it somewhere in your PATH, for example:
+```
+mv ctx3 /usr/local/bin/
+```
+
+## Usage
+
+Print a file tree (defaults to current directory):
 ```
 ctx3 print <path>
 ```
-if no path is provided it defaults to the current directory.
 
-- -\- help => to see instructions
 
-to get the summary you can use:
+Get metadata context (defaults to current directory):
 ```
 ctx3 context <path>
 ```
-if no path is provided it defaults to the current directory.
-you can use wild cards:
+Options:
 
-- -\-json OR -j => to outputs json prompt
-- \-\-help OR -h => see instructions 
+--json, -j → output JSON
+
+--help, -h → show help for a command
+
+## Future Updates
+
+ - Support for Prompt Generations
+ - Code-Base Tech Detection (Similar to github)
+- Gist (Code snipt extraction support)
+
+## Controbutions 
+You can send Pull Requests and contact me if you'd like to to help me develop this tool.
