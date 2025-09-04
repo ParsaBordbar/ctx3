@@ -8,11 +8,13 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "filetree",
-	Short: "FileTree is a CLI tool to analyze project structure",
-	Long:  `FileTree helps you visualize and analyze project structure for better understanding (and LLM context).`,
+	Use:   "ctx3",
+	Short: "ctx3 is a CLI tool to analyze project structure",
+	Long:  `ctx3 helps you visualize and analyze project structure for better understanding (and LLM context).`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Use 'filetree print [dir]' to print a file tree")
+		fmt.Println("ctx3 is a CLI tool to analyze project structure.")
+		fmt.Println("Available commands:")
+		fmt.Println("context [directory]   Analyze project context for LLMs")	
 	},
 }
 
