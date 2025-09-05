@@ -34,9 +34,31 @@ ctx3 context -j
 {
   "root": ".",
   "files": [
-    { "name": ".gitignore", "type": "gitignore", "size": 668 },
-    { "name": "README.md", "type": "md", "size": 253 },
-    { "name": "main.go", "type": "go", "size": 88 }
+    {
+      "name": "ctx3",
+      "type": "file",
+      "path": "ctx3",
+      "size": 3832706,
+      "lines": 4901,
+      "lastEdited": "2025-09-06 01:39:56.680487278 +0330 +0330"
+    },
+    {
+      "name": "filetree.go",
+      "type": "go",
+      "path": "filetree/filetree.go",
+      "size": 565,
+      "lines": 25,
+      "lastEdited": "2025-09-04 20:15:01.949704998 +0330 +0330"
+    },
+    {
+      "name": "main.go",
+      "type": "go",
+      "path": "main.go",
+      "size": 88,
+      "lines": 7,
+      "lastEdited": "2025-08-31 00:05:09.234305186 +0330 +0330",
+      "isEntryPoint": true
+    }
   ],
   "total_files": 11,
   "total_dirs": 4,
