@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,9 @@ type FileInfo struct {
 	Type string `json:"type"`
 	Path string `json:"path"`
 	Size int64  `json:"size"`
+	Lines int   `json:"lines,omitempty"`
+	LastEdited string `json:"lastEdited,omitempty"`
+	IsEntryPoint bool   `json:"isEntryPoint,omitempty"`
 }
 
 type ProjectContext struct {
@@ -22,6 +26,13 @@ type ProjectContext struct {
 	Readme      string     `json:"readme,omitempty"`
 }
 
+var entryFileNames [20] string = [20]string{
+	"main.go", "index.js", "app.py", "server.js", "main.py",
+	"app.js", "index.py", "server.go", "main.ts", "app.ts",
+	"index.ts", "server.ts", "main.rb", "app.rb", "index.rb",
+	"server.rb", "main.php", "app.php", "index.php", "server.php",
+}
+
 var OutputJSON bool
 
 func min(a, b int) int {
@@ -29,6 +40,30 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func countLines(path string) int {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lines := 0
+	for scanner.Scan() {
+		lines++
+	}
+	return lines
+}
+
+func is_entry_point(name string) bool {
+	for _, entry := range entryFileNames {
+		if name == entry {
+			return true
+		}
+	}
+	return false
 }
 
 func AnalyzeProject(root string) ProjectContext {
@@ -53,9 +88,12 @@ func AnalyzeProject(root string) ProjectContext {
 
 			ctx.Files = append(ctx.Files, FileInfo{
 				Name: info.Name(),
+				IsEntryPoint: is_entry_point(info.Name()),
 				Type: fileType,
 				Path: rel,
 				Size: info.Size(),
+				Lines: countLines(path),
+				LastEdited: info.ModTime().String(),
 			})
 			ctx.TotalFiles++
 
