@@ -16,7 +16,7 @@ var printCmd = &cobra.Command{
 		if len(args) > 0 {
 			dir = args[0]
 		}
-		fmt.Println("📂 Project structure:")
+		fmt.Println("┌── 📂 Project structure:")
 		filetree.PrintTree(dir, "")
 	},
 }
