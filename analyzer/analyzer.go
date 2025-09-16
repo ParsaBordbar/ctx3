@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,60 @@ func is_entry_point(name string) bool {
 	return false
 }
 
+func CollectFileStats(ctx *ProjectContext) map[string]int64 {
+	counts := make(map[string]int64)
+
+	for _, file := range ctx.Files {
+		ext := file.Type
+		if ext == "" {
+			ext = "other"
+		}
+		counts[ext] += file.Size
+	}
+	return counts
+}
+
+func FilePercentage(counts map[string]int64) map[string]float64 {
+	var total int64;
+	for _, v := range counts {
+    	total += v
+	}
+
+	percentages := make(map[string]float64)
+	for ext, v := range counts {
+		percentages[ext] = (float64(v) / float64(total)) * 100
+	}
+	return percentages
+}
+
+func PrettyPrintPercentage(percentages map[string]float64) {
+	keys := make([]string, 0, len(percentages))
+	println("┌── File Percentages:")
+	for k := range percentages {
+		keys = append(keys, k)
+	}
+
+	for i, lang := range keys {
+		percent := percentages[lang]
+		isLast := i == len(keys)-1
+
+		branch := "├── "
+		if isLast {
+			branch = "└── "
+		}
+		color := "\033[36m"
+		if i%2 == 0 {
+			color = "\033[34m"
+		}
+
+		bar := strings.Repeat("█", int(percent/2))
+		coloredBar := color + bar + "\033[0m"
+
+		fmt.Printf("%s%-10s %5.1f%% %s\n", branch, lang, percent, coloredBar)
+	}
+}
+
+
 func AnalyzeProject(root string) ProjectContext {
 	ctx := ProjectContext{Root: root}
 
@@ -81,6 +136,7 @@ func AnalyzeProject(root string) ProjectContext {
 
 		if !info.IsDir() {
 			ext := strings.TrimPrefix(filepath.Ext(info.Name()), ".")
+			CollectFileStats(&ctx)
 			fileType := "file"
 			if ext != "" {
 				fileType = ext
