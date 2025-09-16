@@ -20,9 +20,15 @@ Together, these help LLMs (and developers) reason about your codebase more effec
 ---
 
 ###  File Tree
-<img width="463" height="409" alt="Screenshot" src="https://github.com/user-attachments/assets/3d2ab86c-4ee3-4e80-a7ef-35e9b1ddacbf" />
+<img width="1396" height="1380" alt="code" src="https://github.com/user-attachments/assets/771f5e41-42db-4977-85c1-e54be0abf139" />
 
 Prints the file hierarchy of your project and shows the structure.
+
+###  language Percentage
+
+<img width="1396" height="932" alt="code" src="https://github.com/user-attachments/assets/ab7d9b2e-ec07-4f25-a358-39b0c2764fda" />
+
+you can see which langiages and file types are used in a code base!
 
 ### Context
 Outputs metadata (optionally as JSON) including file sizes, types, dependencies, and README contents.
