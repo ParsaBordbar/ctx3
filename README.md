@@ -19,19 +19,9 @@ Together, these help LLMs (and developers) reason about your codebase more effec
 
 ---
 
-###  File Tree
-<img width="1396" height="1380" alt="code" src="https://github.com/user-attachments/assets/771f5e41-42db-4977-85c1-e54be0abf139" />
-
-Prints the file hierarchy of your project and shows the structure.
-
-###  language Percentage
-
-<img width="1396" height="932" alt="code" src="https://github.com/user-attachments/assets/ab7d9b2e-ec07-4f25-a358-39b0c2764fda" />
-
-you can see which langiages and file types are used in a code base!
-
 ### Context
 Outputs metadata (optionally as JSON) including file sizes, types, dependencies, and README contents.
+<img width="3796" height="996" alt="context" src="https://github.com/user-attachments/assets/b81f102a-8cf6-467c-9f69-29f677396c9d" />
 
 Example:
 
@@ -71,6 +61,19 @@ ctx3 context -j
   "dependencies": ["github.com/spf13/cobra v1.9.1"]
 }
 ```
+
+###  File Tree
+<img width="1396" height="1380" alt="code" src="https://github.com/user-attachments/assets/771f5e41-42db-4977-85c1-e54be0abf139" />
+
+Prints the file hierarchy of your project and shows the structure.
+
+###  language Percentage
+
+<img width="1396" height="932" alt="code" src="https://github.com/user-attachments/assets/ab7d9b2e-ec07-4f25-a358-39b0c2764fda" />
+
+you can see which langiages and file types are used in a code base!
+
+
 ### Installation
 
 First, make sure you have Go installed. If not, follow the [Go installation guide](https://go.dev/doc/install).
@@ -120,7 +123,6 @@ Print a file tree (defaults to current directory):
 ```
 ctx3 print <path>
 ```
-
 
 Get metadata context (defaults to current directory):
 ```
