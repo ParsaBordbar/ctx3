@@ -124,6 +124,11 @@ Print a file tree (defaults to current directory):
 ctx3 print <path>
 ```
 
+Get file percentage (defaults to current directory):
+```
+ctx3 percentage
+```
+
 Get metadata context (defaults to current directory):
 ```
 ctx3 context <path>
