@@ -69,7 +69,7 @@ func renderDirNode(buf *bytes.Buffer, n *dirNode, depth int) {
 	}
 }
 
-// renderXMLFiles writes (no CDATA; matches your sample).
+// renderXMLFiles writes.
 // If cfg.Compact is true, it removes the extra blank lines between file blocks
 // and after the section header.
 func renderXMLFiles(buf *bytes.Buffer, files []FileEntry, cfg Config) {

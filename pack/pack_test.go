@@ -118,7 +118,7 @@ func TestPack_UnsupportedFormat(t *testing.T) {
 	mustWrite(t, filepath.Join(td, "f.txt"), []byte("z"))
 	cfg := Config{
 		RootDir:      td,
-		OutputFormat: FormatMD, // not implemented yet
+		OutputFormat: FormatMD, // TODO: not implemented yet
 		Sections:     Sections{Structure: true, Files: true},
 	}
 	_, _, err := Pack(context.Background(), cfg)

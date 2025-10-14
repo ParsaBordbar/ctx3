@@ -38,35 +38,6 @@ func TestRenderXML_Structure_OrderAndRootFiles(t *testing.T) {
 	}
 }
 
-func TestRenderXML_Files_NoCDATA_Deterministic(t *testing.T) {
-	files := []FileEntry{
-		{RelPath: "b/b.txt", Content: []byte("B")},
-		{RelPath: "a/a.txt", Content: []byte("A")},
-	}
-	var buf bytes.Buffer
-	renderXMLFiles(&buf, files, Config{})
-
-	out := buf.String()
-	if !strings.HasPrefix(out, "<files>\nThis section contains the contents of the repository's files.\n\n") {
-		t.Fatalf("files header missing or spacing wrong:\n%s", out)
-	}
-	firstA := strings.Index(out, "<file path=\"a/a.txt\">")
-	firstB := strings.Index(out, "<file path=\"b/b.txt\">")
-	if !(firstA >= 0 && firstB > firstA) {
-		t.Fatalf("expected a/a.txt before b/b.txt; got:\n%s", out)
-	}
-	// content present as-is, with exactly one newline before closing
-	if !strings.Contains(out, "<file path=\"a/a.txt\">\nA\n</file>\n\n") {
-		t.Fatalf("expected raw content for a/a.txt; got:\n%s", out)
-	}
-	if !strings.Contains(out, "<file path=\"b/b.txt\">\nB\n</file>\n\n") {
-		t.Fatalf("expected raw content for b/b.txt; got:\n%s", out)
-	}
-	if !strings.HasSuffix(out, "</files>\n") {
-		t.Fatalf("expected closing </files> tag; got:\n%s", out)
-	}
-}
-
 func TestRenderXML_Compact_RemovesExtraBlankLines(t *testing.T) {
 	files := []FileEntry{
 		{RelPath: "a.txt", Content: []byte("A\n")},

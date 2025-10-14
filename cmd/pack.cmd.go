@@ -126,7 +126,7 @@ func collectPackConfigFromFlags(root string) (pack.Config, error) {
 	cfg.MaxTotalBytes = packMaxTotalBytes
 	cfg.RedactPatterns = normalizeSlice(packRedact)
 	cfg.Concurrency = packConcurrency
-	cfg.Compact = packCompact // NEW
+	cfg.Compact = packCompact
 
 	switch strings.ToLower(packSection) {
 	case "all":
