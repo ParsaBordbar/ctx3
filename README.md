@@ -302,7 +302,13 @@ import (
 
 - Markdown/TXT renderers for `pack`
 - Support for Prompt Generations
-- Code-Base Tech Detection (Similar to github)
+- Functions Overview
+- Json ouput files
+- Support for Yaml
+- Dependency Chain
+- Data Base Type
+- Data Base Relations
+- Data grams!
 - Gist (Code snipt extraction support)
 
 ## Controbutions 
