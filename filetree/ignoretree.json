@@ -1,0 +1,33 @@
+{
+    "dirs":[
+		"node_modules",
+		".git",
+		".venv",
+		"venv",
+		".env",
+		".python-version",
+		"__pycache__",
+		".pytest_cache",
+		".mypy_cache",
+		".cache",
+		".idea",
+		".vscode",
+		"dist",
+		"build",
+		"out",
+		"target",
+		"pkg",
+		"bin",
+		"vendor",
+		"bower_components",
+		"elm-stuff",
+		".tox",
+		".gradle",
+		".next",
+		".parcel-cache",
+		"cmake-build-debug",
+        ".DS_Store",
+        "Thumbs.db",
+        ".coverage"
+    ]
+}
