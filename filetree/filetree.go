@@ -13,7 +13,7 @@ type DirIgnores struct {
 }
 
 func readIgnoreJson() []string {
-	data, err := os.ReadFile("ignoretree.json")
+	data, err := os.ReadFile("filetree/ignore.json")
 	if err != nil {
 		panic(err)
 	}
