@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
+
 func PrintTree(root string, prefix string) {
+	dependencies_dirs := []string{ "node_modules", ".git", "venv", ".python-version", "__pycache__", }
+
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		fmt.Println("Error reading directory:", err)
@@ -14,7 +18,7 @@ func PrintTree(root string, prefix string) {
 	}
 
 	for i, entry := range entries {
-		if entry.Name() == "node_modules" || entry.Name() == ".git" {
+		if slices.Contains(dependencies_dirs ,entry.Name()) {
 			continue
 		}
 
