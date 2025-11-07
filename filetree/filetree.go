@@ -5,11 +5,28 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"encoding/json"
 )
 
+type DirIgnores struct {
+	Dirs []string `json:"dirs"`
+}
+
+func readIgnoreJson() []string {
+	data, err := os.ReadFile("ignoretree.json")
+	if err != nil {
+		panic(err)
+	}
+
+	var fileds DirIgnores
+	err = json.Unmarshal(data, &fileds)
+	if err != nil {
+		panic(err)
+	}
+	return fileds.Dirs
+}
 
 func PrintTree(root string, prefix string) {
-	dependencies_dirs := []string{ "node_modules", ".git", "venv", ".python-version", "__pycache__", }
 
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -18,7 +35,7 @@ func PrintTree(root string, prefix string) {
 	}
 
 	for i, entry := range entries {
-		if slices.Contains(dependencies_dirs ,entry.Name()) {
+		if slices.Contains(readIgnoreJson() ,entry.Name()) {
 			continue
 		}
 
