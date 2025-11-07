@@ -1,33 +1,30 @@
 package filetree
 
 import (
+	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
-	"encoding/json"
 )
+
+var ignoreFile []byte
 
 type DirIgnores struct {
 	Dirs []string `json:"dirs"`
 }
 
 func readIgnoreJson() []string {
-	data, err := os.ReadFile("filetree/ignore.json")
+	var fields DirIgnores
+	err := json.Unmarshal(ignoreFile, &fields)
 	if err != nil {
 		panic(err)
 	}
-
-	var fileds DirIgnores
-	err = json.Unmarshal(data, &fileds)
-	if err != nil {
-		panic(err)
-	}
-	return fileds.Dirs
+	return fields.Dirs
 }
 
 func PrintTree(root string, prefix string) {
-
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		fmt.Println("Error reading directory:", err)
@@ -35,7 +32,7 @@ func PrintTree(root string, prefix string) {
 	}
 
 	for i, entry := range entries {
-		if slices.Contains(readIgnoreJson() ,entry.Name()) {
+		if slices.Contains(readIgnoreJson(), entry.Name()) {
 			continue
 		}
 
