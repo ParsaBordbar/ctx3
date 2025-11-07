@@ -9,6 +9,7 @@ import (
 	"slices"
 )
 
+//go:embed ignore.json
 var ignoreFile []byte
 
 type DirIgnores struct {
