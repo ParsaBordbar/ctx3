@@ -28,6 +28,10 @@
 		"cmake-build-debug",
         ".DS_Store",
         "Thumbs.db",
-        ".coverage"
+        ".coverage",
+		".husky",
+		".gitlab-ci.yml",
+		".github",
+		".circleci"
     ]
 }
