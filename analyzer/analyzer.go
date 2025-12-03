@@ -9,25 +9,25 @@ import (
 )
 
 type FileInfo struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-	Path string `json:"path"`
-	Size int64  `json:"size"`
-	Lines int   `json:"lines,omitempty"`
-	LastEdited string `json:"lastEdited,omitempty"`
-	IsEntryPoint bool   `json:"isEntryPoint,omitempty"`
+	Name         string `json:"name" toon:"name"`
+	Type         string `json:"type" toon:"type"`
+	Path         string `json:"path" toon:"path"`
+	Size         int64  `json:"size" toon:"size"`
+	Lines        int    `json:"lines" toon:"lines"`
+	LastEdited   string `json:"lastEdited" toon:"last_edited"`
+	IsEntryPoint bool   `json:"isEntryPoint" toon:"is_entry_point"`
 }
 
 type ProjectContext struct {
-	Root        string     `json:"root"`
-	Files       []FileInfo `json:"files"`
-	TotalFiles  int        `json:"total_files"`
-	TotalDirs   int        `json:"total_dirs"`
-	Dependencies []string  `json:"dependencies,omitempty"`
-	Readme      string     `json:"readme,omitempty"`
+	Root         string     `json:"root" toon:"root"`
+	Files        []FileInfo `json:"files" toon:"files"`
+	TotalFiles   int        `json:"total_files" toon:"total_files"`
+	TotalDirs    int        `json:"total_dirs" toon:"total_dirs"`
+	Dependencies []string   `json:"dependencies" toon:"dependencies"`
+	Readme       string     `json:"readme" toon:"readme"`
 }
 
-var entryFileNames [20] string = [20]string{
+var entryFileNames [20]string = [20]string{
 	"main.go", "index.js", "app.py", "server.js", "main.py",
 	"app.js", "index.py", "server.go", "main.ts", "app.ts",
 	"index.ts", "server.ts", "main.rb", "app.rb", "index.rb",
@@ -35,6 +35,7 @@ var entryFileNames [20] string = [20]string{
 }
 
 var OutputJSON bool
+var OutputTOON bool
 
 func min(a, b int) int {
 	if a < b {
@@ -81,9 +82,9 @@ func CollectFileStats(ctx *ProjectContext) map[string]int64 {
 }
 
 func FilePercentage(counts map[string]int64) map[string]float64 {
-	var total int64;
+	var total int64
 	for _, v := range counts {
-    	total += v
+		total += v
 	}
 
 	percentages := make(map[string]float64)
@@ -120,7 +121,6 @@ func PrettyPrintPercentage(percentages map[string]float64) {
 	}
 }
 
-
 func AnalyzeProject(root string) ProjectContext {
 	ctx := ProjectContext{Root: root}
 
@@ -143,13 +143,13 @@ func AnalyzeProject(root string) ProjectContext {
 			}
 
 			ctx.Files = append(ctx.Files, FileInfo{
-				Name: info.Name(),
+				Name:         info.Name(),
 				IsEntryPoint: is_entry_point(info.Name()),
-				Type: fileType,
-				Path: rel,
-				Size: info.Size(),
-				Lines: countLines(path),
-				LastEdited: info.ModTime().String(),
+				Type:         fileType,
+				Path:         rel,
+				Size:         info.Size(),
+				Lines:        countLines(path),
+				LastEdited:   info.ModTime().String(),
 			})
 			ctx.TotalFiles++
 
