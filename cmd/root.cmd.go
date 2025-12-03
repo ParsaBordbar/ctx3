@@ -21,6 +21,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	contextCmd.Flags().BoolVarP(&analyzer.OutputJSON, "json", "j", false, "Output as JSON")
+	contextCmd.Flags().BoolVarP(&analyzer.OutputTOON, "toon", "t", false, "Output as TOON")
 	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(percentageCmd)
 }
