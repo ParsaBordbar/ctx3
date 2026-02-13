@@ -22,8 +22,11 @@ var rootCmd = &cobra.Command{
 		fmt.Println(icon)
 		fmt.Println("ctx3 is a CLI tool to analyze project structure.")
 		fmt.Println("┌── Available commands:")
-		fmt.Println("├── context [directory]   Analyze project context for LLMs")
-		fmt.Println("└── print [directory]     Print the file tree of the specified directory")	
+		fmt.Println("├── context [directory]      Analyze project context for LLMs")
+		fmt.Println("├── print [directory]        Print the file tree of the specified directory")	
+		fmt.Println("├── pack [directory]     	  Pack a repository into a single AI-friendly file")	
+		fmt.Println("└── percentage [directory]   Percentage of file types present in the specified directory")
+		fmt.Println()
 	},
 }
 
