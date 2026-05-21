@@ -1,8 +1,15 @@
+# Context Tree (ctx3)
+
+[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://go.dev/)
+[![Build](https://img.shields.io/github/actions/workflow/status/parsabordbar/ctx3/ci.yml?label=build)](https://github.com/parsabordbar/ctx3/actions)
+[![Downloads](https://img.shields.io/github/downloads/parsabordbar/ctx3/total.svg)](https://github.com/parsabordbar/ctx3/releases)
+[![License](https://img.shields.io/github/license/parsabordbar/ctx3)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/parsabordbar/ctx3?style=social)](https://github.com/parsabordbar/ctx3)
+
 <p align="center">
   <img width="200" alt="ctx3" src="https://github.com/user-attachments/assets/7cca9bd3-5587-4df0-a7c1-c5b4323d6a8e" />
 </p>
 
-# Context Tree (ctx3)
 
 **Context Tree (ctx3)** is a free, open-source CLI tool written in Go that helps you (and your favorite LLM) understand a codebase better by providing structured metadata about files and dependencies.
 
