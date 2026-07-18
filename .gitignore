@@ -44,3 +44,9 @@ _testmain.go
 /test/pass.out
 /test/run.out
 /test/times.out
+# Markdown docs — keep only README.md tracked
+*.md
+!README.md
+
+# Local coding-agent config / generated skills
+.claude/
