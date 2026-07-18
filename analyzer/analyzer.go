@@ -44,6 +44,41 @@ func min(a, b int) int {
 	return b
 }
 
+// parseGoModRequires extracts deps from a go.mod, handling both the single-line
+// `require path v1.2.3` and block `require ( ... )` forms.
+func parseGoModRequires(data string) []string {
+	var deps []string
+	inBlock := false
+	for _, raw := range strings.Split(data, "\n") {
+		line := strings.TrimSpace(raw)
+		switch {
+		case inBlock:
+			if line == ")" {
+				inBlock = false
+				continue
+			}
+			if dep := cleanRequire(line); dep != "" {
+				deps = append(deps, dep)
+			}
+		case line == "require (":
+			inBlock = true
+		case strings.HasPrefix(line, "require "):
+			if dep := cleanRequire(strings.TrimSpace(line[len("require "):])); dep != "" {
+				deps = append(deps, dep)
+			}
+		}
+	}
+	return deps
+}
+
+// cleanRequire strips a trailing "// indirect"-style comment.
+func cleanRequire(line string) string {
+	if i := strings.Index(line, "//"); i >= 0 {
+		line = line[:i]
+	}
+	return strings.TrimSpace(line)
+}
+
 func countLines(path string) int {
 	file, err := os.Open(path)
 	if err != nil {
@@ -160,12 +195,7 @@ func AnalyzeProject(root string) ProjectContext {
 
 			if info.Name() == "go.mod" {
 				data, _ := os.ReadFile(path)
-				lines := strings.Split(string(data), "\n")
-				for _, line := range lines {
-					if strings.HasPrefix(line, "require ") {
-						ctx.Dependencies = append(ctx.Dependencies, strings.TrimSpace(line[8:]))
-					}
-				}
+				ctx.Dependencies = append(ctx.Dependencies, parseGoModRequires(string(data))...)
 			}
 		} else {
 			ctx.TotalDirs++
