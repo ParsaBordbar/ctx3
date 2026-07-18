@@ -17,8 +17,15 @@ func writeGoFile(t *testing.T, path, content string) {
 	}
 }
 
+// writeModule drops a minimal go.mod so go/packages can type-check the fixture.
+func writeModule(t *testing.T, dir string) {
+	t.Helper()
+	writeGoFile(t, filepath.Join(dir, "go.mod"), "module example.com/x\n\ngo 1.24\n")
+}
+
 func TestAnalyzeFlow_BasicCallGraph(t *testing.T) {
 	td := t.TempDir()
+	writeModule(t, td)
 
 	writeGoFile(t, filepath.Join(td, "main.go"), `package main
 
@@ -64,6 +71,7 @@ func format() {}
 
 func TestAnalyzeFlow_MultiPackage(t *testing.T) {
 	td := t.TempDir()
+	writeModule(t, td)
 
 	writeGoFile(t, filepath.Join(td, "main.go"), `package main
 import "fmt"
@@ -95,8 +103,108 @@ func collect() {}
 	}
 }
 
+// A method called on a variable resolves to its receiver-typed node.
+func TestAnalyzeFlow_MethodResolution(t *testing.T) {
+	td := t.TempDir()
+	writeModule(t, td)
+	writeGoFile(t, filepath.Join(td, "main.go"), `package main
+
+type Server struct{}
+
+func (s *Server) Start() { s.listen() }
+func (s *Server) listen() {}
+
+func main() {
+	srv := &Server{}
+	srv.Start()
+}
+`)
+	g, err := AnalyzeFlow(Config{RootDir: td})
+	if err != nil {
+		t.Fatalf("AnalyzeFlow: %v", err)
+	}
+
+	if _, ok := g.Nodes["main.Server.Start"]; !ok {
+		t.Fatalf("expected node main.Server.Start; got %v", nodeKeys(g))
+	}
+	if !contains(g.Nodes["main.main"].Calls, "main.Server.Start") {
+		t.Fatalf("main.main should call main.Server.Start; calls: %v", g.Nodes["main.main"].Calls)
+	}
+	if !contains(g.Nodes["main.Server.Start"].Calls, "main.Server.listen") {
+		t.Fatalf("Start should call Server.listen; calls: %v", g.Nodes["main.Server.Start"].Calls)
+	}
+}
+
+// A package-level var holding a func literal becomes an entry node.
+func TestAnalyzeFlow_CommandVarEntry(t *testing.T) {
+	td := t.TempDir()
+	writeModule(t, td)
+	writeGoFile(t, filepath.Join(td, "cmd.go"), `package main
+
+type command struct {
+	Run func()
+}
+
+func doWork() {}
+
+var runCmd = command{
+	Run: func() { doWork() },
+}
+
+func main() { _ = runCmd }
+`)
+	g, err := AnalyzeFlow(Config{RootDir: td})
+	if err != nil {
+		t.Fatalf("AnalyzeFlow: %v", err)
+	}
+
+	node, ok := g.Nodes["main.runCmd"]
+	if !ok {
+		t.Fatalf("expected entry node main.runCmd; got %v", nodeKeys(g))
+	}
+	if !node.IsEntry {
+		t.Fatalf("main.runCmd should be an entry point")
+	}
+	if !contains(node.Calls, "main.doWork") {
+		t.Fatalf("runCmd closure should call main.doWork; calls: %v", node.Calls)
+	}
+}
+
+// --entry-only prunes unreachable funcs; MaxDepth caps render depth.
+func TestAnalyzeFlow_EntryOnlyAndDepth(t *testing.T) {
+	td := t.TempDir()
+	writeModule(t, td)
+	writeGoFile(t, filepath.Join(td, "main.go"), `package main
+
+func main() { a() }
+func a()    { b() }
+func b()    { c() }
+func c()    {}
+
+func orphan() {}
+`)
+	g, err := AnalyzeFlow(Config{RootDir: td, EntryOnly: true, MaxDepth: 2})
+	if err != nil {
+		t.Fatalf("AnalyzeFlow: %v", err)
+	}
+
+	if _, ok := g.Nodes["main.orphan"]; ok {
+		t.Fatalf("--entry-only should drop unreachable main.orphan; nodes: %v", nodeKeys(g))
+	}
+
+	out := RenderText(g)
+	// depth 2: main (0) -> a (1) -> b (2) shown; c (3) pruned.
+	if !strings.Contains(out, "main.b") {
+		t.Fatalf("depth 2 should include main.b; got:\n%s", out)
+	}
+	if strings.Contains(out, "main.c") {
+		t.Fatalf("depth 2 should NOT descend to main.c; got:\n%s", out)
+	}
+}
+
 func TestRenderMermaid_ContainsFlowchart(t *testing.T) {
 	td := t.TempDir()
+	writeModule(t, td)
 	writeGoFile(t, filepath.Join(td, "main.go"), `package main
 func main() { helper() }
 func helper() {}
@@ -124,6 +232,7 @@ func helper() {}
 
 func TestRenderText_ContainsTree(t *testing.T) {
 	td := t.TempDir()
+	writeModule(t, td)
 	writeGoFile(t, filepath.Join(td, "main.go"), `package main
 func main() { helper() }
 func helper() {}

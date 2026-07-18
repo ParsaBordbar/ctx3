@@ -3,18 +3,19 @@ package flow
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"os"
+	"go/types"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
 
 type Config struct {
 	RootDir   string
-	EntryOnly bool // only trace from entry-point files
-	MaxDepth  int  // 0 = unlimited
+	EntryOnly bool // keep only functions reachable from entry points
+	MaxDepth  int  // 0 = unlimited; caps render/traversal depth
 }
 
 // FuncNode represents a function and the functions it calls.
@@ -30,155 +31,320 @@ type FuncNode struct {
 
 // CallGraph holds all discovered functions and their call edges.
 type CallGraph struct {
-	// Nodes keyed by "package.FuncName"
+	// Nodes keyed by "package.FuncName" (methods: "package.Recv.Method")
 	Nodes map[string]*FuncNode
 	// Entry points (nodes in entry files)
 	Entries []string
 	// Package list
 	Packages []string
+	// MaxDepth caps how deep renderers traverse (0 = unlimited).
+	MaxDepth int
 }
 
-var entryFileNames = map[string]bool{
-	"main.go": true, "server.go": true, "app.go": true, "index.go": true,
-}
+// packagesLoadMode carries syntax + full type info + deps for call resolution.
+const packagesLoadMode = packages.NeedName | packages.NeedFiles |
+	packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo |
+	packages.NeedImports | packages.NeedDeps
 
-// AnalyzeFlow walks rootDir and builds a call graph from Go source files.
+// AnalyzeFlow type-checks the packages under rootDir and builds a call graph.
 func AnalyzeFlow(cfg Config) (*CallGraph, error) {
 	graph := &CallGraph{
-		Nodes: make(map[string]*FuncNode),
+		Nodes:    make(map[string]*FuncNode),
+		MaxDepth: cfg.MaxDepth,
+	}
+
+	// go/packages reports absolute paths; relative output needs an absolute root.
+	absRoot, err := filepath.Abs(cfg.RootDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving root %q: %w", cfg.RootDir, err)
+	}
+
+	pkgs, err := packages.Load(&packages.Config{
+		Mode:  packagesLoadMode,
+		Dir:   cfg.RootDir,
+		Tests: false,
+	}, "./...")
+	if err != nil {
+		return nil, fmt.Errorf("loading packages: %w", err)
+	}
+
+	// In-module package paths — edges to anything else (stdlib, deps) are dropped.
+	ours := make(map[string]bool, len(pkgs))
+	for _, p := range pkgs {
+		ours[p.PkgPath] = true
 	}
 
 	pkgSet := make(map[string]bool)
-
-	err := filepath.WalkDir(cfg.RootDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
+	for _, p := range pkgs {
+		if p.TypesInfo == nil {
+			continue
 		}
-		if d.IsDir() {
-			base := d.Name()
-			if base == "vendor" || base == "node_modules" || base == ".git" ||
-				base == "testdata" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-
-		return parseGoFile(path, cfg.RootDir, graph, pkgSet)
-	})
-	if err != nil {
-		return nil, err
+		collectPackage(p, absRoot, ours, graph, pkgSet)
+		collectVarClosures(p, absRoot, ours, graph)
 	}
 
-	// Build package list
+	rebuildPackages(graph, pkgSet)
+	collectEntries(graph)
+
+	// --entry-only: drop nodes unreachable from an entry point.
+	if cfg.EntryOnly && len(graph.Entries) > 0 {
+		keep := reachableFrom(graph, graph.Entries, 0)
+		for k := range graph.Nodes {
+			if !keep[k] {
+				delete(graph.Nodes, k)
+			}
+		}
+		pruned := make(map[string]bool)
+		for _, n := range graph.Nodes {
+			pruned[n.Package] = true
+		}
+		rebuildPackages(graph, pruned)
+	}
+
+	return graph, nil
+}
+
+func collectPackage(p *packages.Package, rootDir string, ours map[string]bool, graph *CallGraph, pkgSet map[string]bool) {
+	pkgSet[p.Name] = true
+
+	for _, file := range p.Syntax {
+		tf := p.Fset.File(file.Pos())
+		if tf == nil {
+			continue
+		}
+		filename := tf.Name()
+		if strings.HasSuffix(filename, "_test.go") {
+			continue
+		}
+		rel, _ := filepath.Rel(rootDir, filename)
+		rel = filepath.ToSlash(rel)
+
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Name == nil {
+				continue
+			}
+			obj, _ := p.TypesInfo.Defs[fn.Name].(*types.Func)
+			if obj == nil || obj.Pkg() == nil {
+				continue
+			}
+
+			key := funcKey(obj)
+			node := &FuncNode{
+				Package:  obj.Pkg().Name(),
+				Name:     funcDisplayName(obj),
+				File:     rel,
+				Line:     p.Fset.Position(fn.Pos()).Line,
+				IsEntry:  isProgramEntry(obj),
+				IsExport: obj.Exported(),
+			}
+
+			if fn.Body != nil {
+				// Inspect descends into nested closures, crediting their calls here.
+				ast.Inspect(fn.Body, func(n ast.Node) bool {
+					if call, ok := n.(*ast.CallExpr); ok {
+						if ck, ok := resolveCallee(p.TypesInfo, ours, call); ok && ck != key {
+							node.Calls = append(node.Calls, ck)
+						}
+					}
+					return true
+				})
+			}
+
+			node.Calls = unique(node.Calls)
+			graph.Nodes[key] = node
+		}
+	}
+}
+
+// collectVarClosures makes each package-level var holding func literals (e.g.
+// cobra RunE handlers, which have no static caller) an entry node whose edges
+// are the functions those closures call.
+func collectVarClosures(p *packages.Package, rootDir string, ours map[string]bool, graph *CallGraph) {
+	for _, file := range p.Syntax {
+		tf := p.Fset.File(file.Pos())
+		if tf == nil || strings.HasSuffix(tf.Name(), "_test.go") {
+			continue
+		}
+		rel, _ := filepath.Rel(rootDir, tf.Name())
+		rel = filepath.ToSlash(rel)
+
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, name := range vs.Names {
+					if i >= len(vs.Values) {
+						continue
+					}
+					calls := closureCalls(p.TypesInfo, ours, vs.Values[i])
+					if len(calls) == 0 {
+						continue
+					}
+					key := p.Name + "." + name.Name
+					if _, exists := graph.Nodes[key]; exists {
+						continue
+					}
+					graph.Nodes[key] = &FuncNode{
+						Package:  p.Name,
+						Name:     name.Name,
+						File:     rel,
+						Line:     p.Fset.Position(name.Pos()).Line,
+						IsEntry:  true,
+						IsExport: name.IsExported(),
+						Calls:    unique(calls),
+					}
+				}
+			}
+		}
+	}
+}
+
+// closureCalls returns in-module calls made inside func literals within expr.
+func closureCalls(info *types.Info, ours map[string]bool, expr ast.Expr) []string {
+	var calls []string
+	ast.Inspect(expr, func(n ast.Node) bool {
+		lit, ok := n.(*ast.FuncLit)
+		if !ok {
+			return true
+		}
+		ast.Inspect(lit.Body, func(m ast.Node) bool {
+			if call, ok := m.(*ast.CallExpr); ok {
+				if ck, ok := resolveCallee(info, ours, call); ok {
+					calls = append(calls, ck)
+				}
+			}
+			return true
+		})
+		return false // body already walked
+	})
+	return calls
+}
+
+// resolveCallee maps a call to an in-module node key, or false if not ours.
+func resolveCallee(info *types.Info, ours map[string]bool, call *ast.CallExpr) (string, bool) {
+	var id *ast.Ident
+	switch f := call.Fun.(type) {
+	case *ast.Ident:
+		id = f
+	case *ast.SelectorExpr:
+		id = f.Sel
+	default:
+		return "", false
+	}
+	callee, _ := info.Uses[id].(*types.Func)
+	if callee == nil || callee.Pkg() == nil {
+		return "", false
+	}
+	if !ours[callee.Pkg().Path()] {
+		return "", false
+	}
+	return funcKey(callee), true
+}
+
+func rebuildPackages(graph *CallGraph, pkgSet map[string]bool) {
+	graph.Packages = graph.Packages[:0]
 	for pkg := range pkgSet {
 		graph.Packages = append(graph.Packages, pkg)
 	}
 	sort.Strings(graph.Packages)
+}
 
-	// Collect entry nodes
+func collectEntries(graph *CallGraph) {
+	graph.Entries = graph.Entries[:0]
 	for key, node := range graph.Nodes {
 		if node.IsEntry {
 			graph.Entries = append(graph.Entries, key)
 		}
 	}
 	sort.Strings(graph.Entries)
-
-	return graph, nil
 }
 
-func parseGoFile(path, rootDir string, graph *CallGraph, pkgSet map[string]bool) error {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, nil, 0)
-	if err != nil {
-		// Skip unparseable files gracefully
-		return nil
+// isProgramEntry reports whether obj is package main's `func main`.
+func isProgramEntry(obj *types.Func) bool {
+	if obj.Name() != "main" || obj.Pkg() == nil || obj.Pkg().Name() != "main" {
+		return false
 	}
+	sig, ok := obj.Type().(*types.Signature)
+	return ok && sig.Recv() == nil
+}
 
-	pkgName := f.Name.Name
-	pkgSet[pkgName] = true
+// funcKey is the canonical node key: "pkg.Func" or "pkg.Recv.Method".
+func funcKey(obj *types.Func) string {
+	return obj.Pkg().Name() + "." + funcDisplayName(obj)
+}
 
-	rel, _ := filepath.Rel(rootDir, path)
-	rel = filepath.ToSlash(rel)
-	isEntry := entryFileNames[filepath.Base(path)]
+// funcDisplayName is "Func" for a function, "Recv.Method" for a method.
+func funcDisplayName(obj *types.Func) string {
+	name := obj.Name()
+	if sig, ok := obj.Type().(*types.Signature); ok && sig.Recv() != nil {
+		rt := sig.Recv().Type()
+		if ptr, ok := rt.(*types.Pointer); ok {
+			rt = ptr.Elem()
+		}
+		if named, ok := rt.(*types.Named); ok {
+			name = named.Obj().Name() + "." + name
+		}
+	}
+	return name
+}
 
-	for _, decl := range f.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name == nil {
+// reachableFrom returns node keys reachable from roots (BFS). maxDepth 0 = unlimited.
+func reachableFrom(g *CallGraph, roots []string, maxDepth int) map[string]bool {
+	keep := make(map[string]bool)
+	type item struct {
+		key   string
+		depth int
+	}
+	var queue []item
+	for _, r := range roots {
+		if _, ok := g.Nodes[r]; ok && !keep[r] {
+			keep[r] = true
+			queue = append(queue, item{r, 0})
+		}
+	}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if maxDepth > 0 && cur.depth >= maxDepth {
 			continue
 		}
-
-		funcName := fn.Name.Name
-		key := pkgName + "." + funcName
-		if fn.Recv != nil {
-			// Method — include receiver type in name
-			recvType := receiverTypeName(fn.Recv)
-			funcName = recvType + "." + funcName
-			key = pkgName + "." + funcName
+		node := g.Nodes[cur.key]
+		if node == nil {
+			continue
 		}
-
-		node := &FuncNode{
-			Package:  pkgName,
-			Name:     funcName,
-			File:     rel,
-			Line:     fset.Position(fn.Pos()).Line,
-			IsEntry:  isEntry,
-			IsExport: len(funcName) > 0 && funcName[0] >= 'A' && funcName[0] <= 'Z',
+		for _, c := range node.Calls {
+			if _, ok := g.Nodes[c]; !ok {
+				continue
+			}
+			if !keep[c] {
+				keep[c] = true
+				queue = append(queue, item{c, cur.depth + 1})
+			}
 		}
-
-		// Walk the function body for call expressions
-		if fn.Body != nil {
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				callee := calleeString(call.Fun, pkgName)
-				if callee != "" && callee != key {
-					node.Calls = append(node.Calls, callee)
-				}
-				return true
-			})
-		}
-
-		// Deduplicate calls
-		node.Calls = unique(node.Calls)
-
-		graph.Nodes[key] = node
 	}
-
-	return nil
+	return keep
 }
 
-func receiverTypeName(fl *ast.FieldList) string {
-	if fl == nil || len(fl.List) == 0 {
-		return ""
+// rootKeys returns entry points, or all exported functions if none were found.
+func rootKeys(g *CallGraph) []string {
+	if len(g.Entries) > 0 {
+		return g.Entries
 	}
-	switch t := fl.List[0].Type.(type) {
-	case *ast.StarExpr:
-		if id, ok := t.X.(*ast.Ident); ok {
-			return id.Name
-		}
-	case *ast.Ident:
-		return t.Name
-	}
-	return ""
-}
-
-func calleeString(expr ast.Expr, currentPkg string) string {
-	switch e := expr.(type) {
-	case *ast.Ident:
-		// Local call — qualify with current package
-		return currentPkg + "." + e.Name
-	case *ast.SelectorExpr:
-		// pkg.Func or recv.Method
-		if id, ok := e.X.(*ast.Ident); ok {
-			return id.Name + "." + e.Sel.Name
+	var roots []string
+	for key, node := range g.Nodes {
+		if node.IsExport {
+			roots = append(roots, key)
 		}
 	}
-	return ""
+	sort.Strings(roots)
+	return roots
 }
 
 func unique(ss []string) []string {
@@ -196,21 +362,12 @@ func unique(ss []string) []string {
 // ─── Text renderer ───────────────────────────────────────────────────────────
 
 // RenderText produces a human-readable call-tree. Starts from entry points
-// (or all exported functions if no entries are found).
+// (or all exported functions if no entries are found). Honors g.MaxDepth.
 func RenderText(g *CallGraph) string {
 	var sb strings.Builder
 	sb.WriteString("┌── Code Flow\n")
 
-	roots := g.Entries
-	if len(roots) == 0 {
-		// Fallback: exported functions sorted
-		for key, node := range g.Nodes {
-			if node.IsExport {
-				roots = append(roots, key)
-			}
-		}
-		sort.Strings(roots)
-	}
+	roots := rootKeys(g)
 
 	visited := make(map[string]bool)
 	for _, r := range roots {
@@ -241,7 +398,14 @@ func renderTextNode(sb *strings.Builder, g *CallGraph, key, prefix, childPrefix 
 	}
 	visited[key] = true
 
+	if g.MaxDepth > 0 && depth+1 > g.MaxDepth {
+		return
+	}
+
 	for i, callee := range node.Calls {
+		if _, ok := g.Nodes[callee]; !ok {
+			continue
+		}
 		isLast := i == len(node.Calls)-1
 		p, cp := childPrefix+"├── ", childPrefix+"│   "
 		if isLast {
@@ -253,11 +417,17 @@ func renderTextNode(sb *strings.Builder, g *CallGraph, key, prefix, childPrefix 
 
 // ─── Mermaid renderer ────────────────────────────────────────────────────────
 
-
 func RenderMermaid(g *CallGraph) string {
 	var sb strings.Builder
 
 	sb.WriteString("```mermaid\nflowchart LR\n")
+
+	// With a depth cap, emit only nodes reachable within that depth.
+	var keep map[string]bool
+	if g.MaxDepth > 0 {
+		keep = reachableFrom(g, rootKeys(g), g.MaxDepth)
+	}
+	included := func(key string) bool { return keep == nil || keep[key] }
 
 	// Assign a color class per package
 	pkgClass := make(map[string]string, len(g.Packages))
@@ -269,7 +439,9 @@ func RenderMermaid(g *CallGraph) string {
 	// Emit nodes — sanitize key to valid Mermaid ID
 	keys := make([]string, 0, len(g.Nodes))
 	for k := range g.Nodes {
-		keys = append(keys, k)
+		if included(k) {
+			keys = append(keys, k)
+		}
 	}
 	sort.Strings(keys)
 
@@ -293,6 +465,9 @@ func RenderMermaid(g *CallGraph) string {
 		fromID := mermaidID(key)
 		for _, callee := range node.Calls {
 			if _, exists := g.Nodes[callee]; !exists {
+				continue
+			}
+			if !included(callee) {
 				continue
 			}
 			toID := mermaidID(callee)
