@@ -17,11 +17,33 @@
 
 ## What Can It Do?
 
-ctx3 combines three core ideas:
+ctx3 turns a repo into structured, LLM‑friendly facts — from a quick file tree to a packed artifact you can hand to a model, a Go call‑graph, a dependency chain, and a ready‑to‑commit agent context file.
 
-1. **File Tree** – print the file hierarchy of your project.
-2. **Context** – collect metadata about files, dependencies, and a README preview.
-3. **Pack** – generate a single, LLM‑friendly file that contains the directory structure and the full contents of files (similar to Repomix). Supports ignore/include globs, binary handling, size caps, and a compact mode.
+### At a glance
+
+| Command | What you get |
+|---|---|
+| [`print`](#ctx3-print) | File hierarchy of the project |
+| [`context`](#ctx3-context) | File/dep metadata + README preview (text, JSON, or TOON) |
+| [`percentage`](#ctx3-percentage) | Language / file‑type breakdown |
+| [`pack`](#ctx3-pack) | Whole repo packed into one AI‑friendly file (Repomix‑style) |
+| [`flow`](#ctx3-flow) | Go call graph as a text tree or Mermaid flowchart |
+| [`deps`](#ctx3-deps) | Internal package dependency chain + circular‑import detection |
+| [`init`](#ctx3-init) | Deterministic `AGENTS.md` / `CLAUDE.md` scaffold for coding agents |
+| [`update`](#updating) | Update ctx3 in place to the latest release |
+| `version` | Print the running version |
+
+Two of these — `deps` and (soon) DB analysis — can also emit their findings as a **[coding‑agent skill](#emitting-skills)** instead of raw text, so an agent loads the facts only when they're relevant.
+
+### Quick start
+
+```bash
+go install github.com/parsabordbar/ctx3@latest
+
+ctx3 print .                 # see the tree
+ctx3 pack . -o pack.xml      # pack the repo for an LLM
+ctx3 init                    # scaffold an agent context file
+```
 
 ---
 
@@ -269,6 +291,118 @@ ctx3 pack . --max-file-bytes 200000 --max-total-bytes 5000000 -o pack.xml
 
 ---
 
+### `ctx3 flow`
+
+Analyze the **call graph** of a Go project — which function calls which — and render it as a text tree or a Mermaid flowchart.
+
+Calls are resolved with **full type information** (`go/types` via `golang.org/x/tools/go/packages`), so methods called on variables land on their real receiver type (`pkg.Type.Method`), cross‑package calls resolve, and stdlib/vendored noise is filtered out. Execution starts at `func main` **plus every framework command handler** — package‑level vars holding function literals (e.g. cobra `RunE`), which the framework invokes at runtime with no static caller. Each subcommand therefore shows up as its own entry with the domain functions it drives.
+
+**Flags**
+
+* `-m, --mermaid`: output a Mermaid flowchart (pipe to a file with `-o`)
+* `-o, --output <path>`: write to a file instead of stdout
+* `--entry-only`: keep only functions reachable from an entry point (prunes unreferenced helpers)
+* `--depth <n>`: cap traversal depth in the text tree and Mermaid output (`0` = unlimited)
+* `--skill`, `--as`, `--force`: emit the call graph as a skill — see [Emitting skills](#emitting-skills)
+
+**Examples**
+
+```bash
+ctx3 flow .
+ctx3 flow . --entry-only --depth 3   # per-command app flow, 3 levels deep
+ctx3 flow . --mermaid -o flow.md
+ctx3 flow . --skill                # call-graph facts as a Claude Code skill
+```
+
+---
+
+### `ctx3 deps`
+
+Build the **internal package dependency chain** of a Go module: which packages import which, external deps split out, plus **circular‑import detection**.
+
+**Flags**
+
+* `-m, --mermaid`: dependency graph as Mermaid markdown
+* `-j, --json` / `-t, --toon`: machine‑readable output (TOON is compact, LLM‑optimized)
+* `-o, --output <path>`: write to a file instead of stdout
+* `--cycles-only`: report only circular imports (non‑zero exit if any found — handy in CI)
+* `--quiet`: with `--cycles-only`, print only on failure (exit code is the signal)
+* `--skill`, `--as`, `--force`: emit a skill instead of printing — see [Emitting skills](#emitting-skills)
+
+**Examples**
+
+```bash
+ctx3 deps .
+ctx3 deps . --mermaid -o deps.md
+ctx3 deps . --cycles-only         # fails the build on a cycle
+ctx3 deps . --cycles-only --quiet # CI: silent unless a cycle exists
+ctx3 deps . -t                 # compact TOON for an LLM
+```
+
+---
+
+### `ctx3 init`
+
+Generate a **context file for coding agents** — an `AGENTS.md` (default) or `CLAUDE.md` — by composing ctx3's own analysis: project metadata, detected build/test/run commands, package + call‑graph architecture, a depth‑limited **directory tree**, language breakdown, dependencies, and a **key‑files** list. Output is **deterministic (no LLM)**; `TODO` markers flag what a human should refine.
+
+The `Structure` tree and `Key files` sections are noise‑filtered (lockfiles, `node_modules`, `target/`, generated artifacts dropped) and entry points are surfaced first — so a large Rust/Python repo shows its real layout, not eight lockfiles.
+
+**Flags**
+
+* `--as agent|claude|gemini|copilot`: which tool's file to write (`agent` → `AGENTS.md`, `claude` → `CLAUDE.md`, `gemini` → `GEMINI.md`, `copilot` → `.github/copilot-instructions.md`)
+* `-o, --output <path>`: override the output path
+* `--stdout`: print instead of writing a file
+* `--force`: overwrite an existing file
+
+**Examples**
+
+```bash
+ctx3 init                      # writes AGENTS.md
+ctx3 init . --as claude        # writes CLAUDE.md
+ctx3 init --stdout             # preview without writing
+```
+
+---
+
+### Emitting skills
+
+Some ctx3 commands can package their findings as a **[Claude Code skill](https://docs.claude.com/en/docs/claude-code)** — a `SKILL.md` plus progressive‑disclosure `reference/` files — instead of dumping text. The point: a coding agent loads a `description`‑matched skill **only when the task needs it**, so heavy per‑domain facts don't bloat the always‑on context file.
+
+Both `deps --skill` (dependency chain) and `flow --skill` (call graph) emit skills:
+
+```bash
+# Write .claude/skills/<name>/SKILL.md + reference files
+ctx3 deps . --skill
+ctx3 flow . --skill
+
+# Overwrite an existing skill dir
+ctx3 deps . --skill --force
+
+# Preview the SKILL.md without writing anything
+ctx3 deps . --skill -o -
+```
+
+**Flags** (on any skill‑capable command)
+
+* `--skill`: emit a skill instead of printing
+* `--as <target>`: which tool convention to write for (default `claude`) — **only `claude` supports skills**
+* `--force`: overwrite an existing skill directory
+* `-o -`: print the `SKILL.md` to stdout instead of writing files
+
+A generated skill looks like:
+
+```
+.claude/skills/ctx3-deps/
+├── SKILL.md                    # name + description (the trigger) + a short overview
+└── reference/
+    ├── dependencies.md         # facts, loaded on demand
+    └── dependencies.mermaid.md # diagram, loaded on demand
+```
+
+Under the hood this is the reusable **`skillwriter`** package (`skillwriter.Write` / `Validate`), so new fact‑emitting commands get consistent, validated skill output for free — see [Using ctx3 as a library](#using-ctx3-as-a-library).
+
+---
+
 ## Installation
 
 Make sure you have Go installed. Then:
@@ -281,7 +415,21 @@ Ensure `$GOPATH/bin` (or your Go install bin dir) is on your `PATH`.
 
 ```bash
 ctx3 --help
+ctx3 version
 ```
+
+## Updating
+
+Update in place to the latest tagged release:
+
+```bash
+ctx3 update            # installs the latest version via the Go toolchain
+ctx3 update --check    # just report the latest version, install nothing
+```
+
+`update` asks the Go module proxy what `@latest` resolves to, then runs
+`go install github.com/parsabordbar/ctx3@latest`. It needs Go on your `PATH`
+(same as the install step). Without Go, run that `go install` line manually.
 
 ## Build From Source
 
@@ -294,29 +442,56 @@ go build -o ctx3
 
 ## Using ctx3 as a Library
 
-Besides being a CLI tool, ctx3 can also be imported directly into your Go projects.  
-All the `filetree`, `analyzer` and `pack` packages are designed to be reusable.  
-You can pull them in with a standard Go import:
+Besides being a CLI tool, ctx3 can be imported directly into your Go projects — every command is a thin adapter over a reusable package:
+
+| Package | Backs | Use it for |
+|---|---|---|
+| `filetree` | `print` | Walk + print a file hierarchy |
+| `analyzer` | `context` | Project metadata + dep list from `go.mod` |
+| `pack` | `pack` | Pack a repo into one artifact |
+| `flow` | `flow` | Build a Go call graph |
+| `deps` | `deps` | Internal dependency chain + cycle detection |
+| `agentmd` | `init` | Compose an agent context file |
+| `skillwriter` | `--skill` | Materialize a Claude Code skill from derived facts |
+| `target` | `--as` | Resolve a tool selector to its files/skill dir |
 
 ```go
 import (
     "github.com/parsabordbar/ctx3/filetree"
     "github.com/parsabordbar/ctx3/analyzer"
+    "github.com/parsabordbar/ctx3/skillwriter"
 )
 ```
 
 ## Roadmap
 
-- Markdown/TXT renderers for `pack`
-- Support for Prompt Generations
-- Functions Overview
-- Json ouput files
-- Support for Yaml
-- Dependency Chain
-- Data Base Type
-- Data Base Relations
-- Data grams!
-- Gist (Code snipt extraction support)
+**Done:** call graph (`flow`) · dependency chain (`deps`) · agent context files (`init`) · skill emission (`skillwriter`)
 
-## Controbutions 
-Contributions welcome! Feel free to open issues or PRs. If you’re proposing a larger change, please start a discussion first.
+**Next:**
+
+- Markdown / TXT renderers for `pack`
+- YAML output
+- Database type + relation analysis (emitted as a skill)
+- Datagrams / ER diagrams
+- Gist — code‑snippet extraction
+- Prompt generation
+
+## Contributing
+
+Contributions welcome! Open issues or PRs. If you're proposing a larger change, please start a discussion first.
+
+**Workflow:** `main` is always releasable and protected — branch off it (`feat/…`, `fix/…`), open a PR, get CI green (`go test ./...` + `go build`), then squash‑merge. Use [Conventional Commit](https://www.conventionalcommits.org) titles.
+
+## Releasing (maintainers)
+
+ctx3 has no publish step — `go install` pulls straight from Git via the module proxy, and **"latest" means the highest semver tag**. To cut a release:
+
+```bash
+git checkout main && git pull
+git tag v0.1.0            # semver: vMAJOR.MINOR.PATCH
+git push origin v0.1.0
+```
+
+Within minutes `go install github.com/parsabordbar/ctx3@latest` (and `ctx3 update`) resolve to the new tag. `ctx3 version` reports it automatically — the version is read from the module build info, no `-ldflags` needed.
+
+Rules of thumb: bump PATCH for fixes, MINOR for features, MAJOR for breaking changes. Reaching `v1.0.0` promises API stability (a `v2` would require a `/v2` module‑path suffix — avoid until necessary). Prebuilt binaries via GoReleaser can be added later so non‑Go users can install without the toolchain.
