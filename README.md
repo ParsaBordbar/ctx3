@@ -27,7 +27,11 @@ ctx3 turns a repo into structured, LLM‑friendly facts — from a quick file tr
 | [`context`](#ctx3-context) | File/dep metadata + README preview (text, JSON, or TOON) |
 | [`percentage`](#ctx3-percentage) | Language / file‑type breakdown |
 | [`pack`](#ctx3-pack) | Whole repo packed into one AI‑friendly file (Repomix‑style) |
+| [`map`](#ctx3-map) | Symbol index — every type, func, const and var with `file:line` |
+| [`functions`](#ctx3-functions) | Function signatures — receivers, args, returns — per file or dir |
 | [`flow`](#ctx3-flow) | Go call graph as a text tree or Mermaid flowchart |
+| [`impact`](#ctx3-impact) | Reverse call graph — everything that calls a function |
+| [`db`](#ctx3-db) | Detected databases + relational schema rebuilt from the repo |
 | [`deps`](#ctx3-deps) | Internal package dependency chain + circular‑import detection |
 | [`init`](#ctx3-init) | Deterministic `AGENTS.md` / `CLAUDE.md` scaffold for coding agents |
 | [`update`](#updating) | Update ctx3 in place to the latest release |
@@ -293,6 +297,108 @@ ctx3 pack . --max-file-bytes 200000 --max-total-bytes 5000000 -o pack.xml
 > * Globs use `**` for recursive matches. Patterns like `**/*.go` match in all subfolders. If you want basename-only patterns, prefer explicit `**/`.
 > * `.git` and `node_modules` are always excluded from traversal.
 > * `.gitignore` at repo root is respected by default.
+
+---
+
+### `ctx3 functions`
+
+List every function and method declared in a Go file or directory, with its receiver, arguments and return types. Aliases: `funcs`, `fn`.
+
+Syntax‑only, like [`map`](#ctx3-map) — where `map` indexes all declaration kinds one line each, `functions` is the detailed signature view of one file or package.
+
+**Flags**
+
+* `-r, --recursive`, `-e, --exported`, `--tests`, `-d, --docs`
+* `-m, --match <regexp>`, `--sort-name`
+* `-g, --grep`, `--md`, `-j, --json`, `-t, --toon`, `-o, --output <path>`
+
+```bash
+ctx3 functions pack/walker.go     # one file
+ctx3 functions . -r -e            # exported API of the whole repo
+ctx3 functions . -r -m '^New' -g  # constructors, grep-style
+```
+
+---
+
+### `ctx3 db`
+
+Detect which **databases** a project uses and reconstruct the relational **schema** from files already in the repo — SQL migrations, `schema.sql`, `schema.prisma`, ORM‑tagged Go structs.
+
+Nothing connects to a live database: analysis is static and deterministic. Engines are detected from dependency manifests, container images, and DSNs in env files, and each is reported with the evidence that proved it.
+
+**Flags**
+
+* `-m, --mermaid`: schema as a Mermaid ER diagram
+* `--engines-only`: list detected databases, skip the schema
+* `-j, --json` / `-t, --toon`: machine‑readable output
+* `--skill`, `--as`, `--force`, `-o`: emit a skill — see [Emitting skills](#emitting-skills)
+
+```bash
+ctx3 db .
+ctx3 db . --mermaid -o schema.md
+ctx3 db . --skill                 # schema facts as a Claude Code skill
+```
+
+---
+
+### `ctx3 map`
+
+Index **every top‑level symbol** in a Go tree — types, structs, interfaces, functions, methods, consts and vars — each with its signature and `file:line`.
+
+Syntax‑only (`go/parser`, no type‑check, no build), so it works on a partial checkout or code that doesn't currently compile. Exported symbols only by default.
+
+This is the cheap alternative to reading files: an agent greps the map to find where something lives instead of opening a directory at a time.
+
+**Flags**
+
+* `-a, --all`: include unexported symbols
+* `--members`: show struct fields and interface methods
+* `-d, --docs`: show the first doc‑comment line under each symbol
+* `--kind <list>`: keep only some kinds — `func|method|struct|interface|type|const|var`
+* `-m, --match <regexp>`: only symbols whose name matches
+* `--tests`: include `_test.go` files
+* `--no-recurse`: index only the given directory
+* `-g, --grep`: one `file:line: signature` per symbol, for pipes and editors
+* `--md`, `-j, --json`, `-t, --toon`: Markdown tables / JSON / TOON
+* `-o, --output <path>`: write to a file instead of stdout
+
+**Examples**
+
+```bash
+ctx3 map .                          # exported API of the whole repo
+ctx3 map . -a                       # include unexported
+ctx3 map ./db --members             # struct fields and interface methods
+ctx3 map . --kind struct,interface  # the data model only
+ctx3 map . -m 'Skill' -g            # grep-style, name filter
+```
+
+---
+
+### `ctx3 impact`
+
+Walk the call graph **backwards** from a function: direct callers, transitive callers, the packages involved, and the entry points a change can surface at. The blast radius of an edit, before you make it.
+
+The symbol is matched as an exact `pkg.Func` / `pkg.Recv.Method` key first, then by bare function or method name, then as a substring — every match is reported, so an ambiguous name shows all candidates rather than guessing. A function with no callers is reported as such (dead code, or an externally invoked entry point).
+
+Uses the same type‑checked graph as [`flow`](#ctx3-flow), so it needs a buildable module.
+
+**Flags**
+
+* `-C, --dir <path>`: directory to analyze (default `.`)
+* `--depth <n>`: caller levels to walk (`0` = unlimited)
+* `-m, --mermaid`: reverse call graph as a Mermaid diagram, targets highlighted
+* `-j, --json` / `-t, --toon`: machine‑readable output
+* `-o, --output <path>`: write to a file instead of stdout
+
+**Examples**
+
+```bash
+ctx3 impact Scan                 # who calls any Scan
+ctx3 impact symbols.Scan         # one exact function
+ctx3 impact "Graph.Skill"        # a method
+ctx3 impact Scan --depth 2       # two caller levels
+ctx3 impact Scan --mermaid       # diagram of the blast radius
+```
 
 ---
 
