@@ -88,7 +88,9 @@ var commandGroups = []struct {
 }{
 	{"Analyze", [][2]string{
 		{"context", "Project context for LLMs — files, deps, README"},
+		{"map", "Symbol index — types, funcs, consts — with file:line"},
 		{"flow", "Call graph & code flow"},
+		{"impact", "Reverse call graph — what calls a function"},
 		{"deps", "Internal dependency chain + cycle detection"},
 		{"functions", "Function signatures — args & returns — per file/dir"},
 		{"db", "Detected databases + relational schema diagram"},
@@ -146,6 +148,7 @@ func init() {
 var dirArgCommands = map[string]bool{
 	"context": true, "percentage": true, "print": true,
 	"pack": true, "flow": true, "deps": true, "init": true, "db": true,
+	"functions": true, "map": true,
 }
 
 func Execute() {
