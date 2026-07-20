@@ -59,12 +59,12 @@ func TestGenerate_CoreSections(t *testing.T) {
 	writeFile(t, dir, "main.go", "package main\n\nfunc main() {}\n")
 	writeFile(t, dir, "README.md", "# CoolProj\n\nCoolProj does a useful thing for everyone.\n")
 
-	doc, err := Generate(Config{RootDir: dir, Title: "AGENT.md"})
+	doc, err := Generate(Config{RootDir: dir, Title: "AGENTS.md"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"# AGENT.md",
+		"# AGENTS.md",
 		"coolproj",           // project name from module path
 		"## Commands",
 		"go test ./...",

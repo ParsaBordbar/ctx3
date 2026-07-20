@@ -18,8 +18,8 @@ var (
 
 var initCmd = &cobra.Command{
 	Use:   "init [directory]",
-	Short: "Generate an AGENT.md/CLAUDE.md context file for coding agents",
-	Long: `Generate a context file (AGENT.md by default) that gives coding agents a
+	Short: "Generate an AGENTS.md/CLAUDE.md context file for coding agents",
+	Long: `Generate a context file (AGENTS.md by default) that gives coding agents a
 head start in this repository. Composes ctx3's analysis — project metadata,
 detected build/test/run commands, package/call-graph architecture, language
 breakdown and dependencies — into a committable markdown scaffold.
@@ -34,7 +34,8 @@ Examples:
   ctx3 init
   ctx3 init . --as claude
   ctx3 init -o CONTEXT.md --force
-  ctx3 init --stdout`,
+  ctx3 init --stdout
+  ctx3 init -o -`,
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true, // runtime errors shouldn't dump the flag list
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -47,7 +48,9 @@ Examples:
 		}
 
 		out := initOutputPath
-		if out == "" {
+		toStdout := initStdout || out == "-"
+		// "-" selects stdout; the target's context file still names the document.
+		if out == "" || out == "-" {
 			sel := initAs
 			if sel == "" {
 				sel = target.Default
@@ -67,7 +70,7 @@ Examples:
 			return err
 		}
 
-		if initStdout {
+		if toStdout {
 			fmt.Print(doc)
 			return nil
 		}
@@ -84,7 +87,7 @@ Examples:
 }
 
 func init() {
-	initCmd.Flags().StringVarP(&initOutputPath, "output", "o", "", "output file path (default AGENT.md)")
+	initCmd.Flags().StringVarP(&initOutputPath, "output", "o", "", "output file path, or - for stdout (default AGENTS.md)")
 	initCmd.Flags().BoolVar(&initStdout, "stdout", false, "print to stdout instead of writing a file")
 	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite the output file if it exists")
 	initCmd.Flags().StringVar(&initAs, "as", "", "target tool: agent|claude|gemini|copilot")

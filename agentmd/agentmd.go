@@ -1,7 +1,4 @@
-// Package agentmd generates an AGENT.md / CLAUDE.md style context file for a
-// project by composing ctx3's existing analysis engines (analyzer, flow) with
-// build/test/run command detection. Output is a deterministic scaffold meant to
-// be committed and then refined by a human or coding agent.
+// Package agentmd generates an AGENTS.md / CLAUDE.md style context file for a project by composing ctx3's existing analysis engines (analyzer, flow) with build/test/run command detection.
 package agentmd
 
 import (
@@ -19,7 +16,7 @@ import (
 // Config controls generation.
 type Config struct {
 	RootDir  string
-	Title    string // output filename shown in the header note, e.g. "AGENT.md"
+	Title    string // output filename shown in the header note, e.g. "AGENTS.md"
 	MaxFiles int    // number of largest files to list (0 = default)
 }
 
@@ -35,7 +32,7 @@ func Generate(cfg Config) (string, error) {
 		cfg.RootDir = "."
 	}
 	if cfg.Title == "" {
-		cfg.Title = "AGENT.md"
+		cfg.Title = "AGENTS.md"
 	}
 	if cfg.MaxFiles == 0 {
 		cfg.MaxFiles = 8
@@ -171,8 +168,7 @@ func writeDependencies(sb *strings.Builder, ctx *analyzer.ProjectContext) {
 	sb.WriteString("\n")
 }
 
-// writeKeyFiles lists entry points first, then the largest source files,
-// dropping generated/lockfile/vendored noise.
+// writeKeyFiles lists entry points first, then the largest source files.
 func writeKeyFiles(sb *strings.Builder, ctx *analyzer.ProjectContext, n int) {
 	var files []analyzer.FileInfo
 	for _, f := range ctx.Files {
@@ -283,8 +279,7 @@ func writeTree(sb *strings.Builder, dir, prefix string, depth int) {
 
 // ─── Command detection ───────────────────────────────────────────────────────
 
-// DetectCommands inspects manifest files at root and returns build/test/run
-// command groups for the detected ecosystem(s).
+// DetectCommands inspects manifest files at root and returns build/test/run command groups for the detected ecosystem(s).
 func DetectCommands(root string) []CommandGroup {
 	var groups []CommandGroup
 

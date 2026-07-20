@@ -24,9 +24,27 @@ func TestInitCmd_RejectsBadPreset(t *testing.T) {
 	}
 }
 
+func TestInitCmd_DashWritesStdout(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir) // any accidental file write lands here, not in the package dir
+	t.Cleanup(func() { initOutputPath = "" })
+	initOutputPath = "-"
+
+	if err := initCmd.RunE(initCmd, []string{dir}); err != nil {
+		t.Fatalf("-o - should print, got %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		t.Fatalf("-o - wrote a file instead of printing: %q", e.Name())
+	}
+}
+
 func TestInitCmd_GuardsExistingFile(t *testing.T) {
 	dir := t.TempDir()
-	out := filepath.Join(dir, "AGENT.md")
+	out := filepath.Join(dir, "AGENTS.md")
 	if err := os.WriteFile(out, []byte("keep me"), 0644); err != nil {
 		t.Fatal(err)
 	}
