@@ -40,10 +40,15 @@ Two of these — `deps` and (soon) DB analysis — can also emit their findings 
 ```bash
 go install github.com/parsabordbar/ctx3@latest
 
+ctx3                         # interactive menu — ↑/↓/Tab to pick, Enter to run
 ctx3 print .                 # see the tree
 ctx3 pack . -o pack.xml      # pack the repo for an LLM
 ctx3 init                    # scaffold an agent context file
 ```
+
+Running `ctx3` with no arguments opens an interactive launcher (arrow keys or
+Tab to move, Enter to run, `q` to quit). In a pipe or with `--plain` it prints a
+static home screen instead.
 
 ---
 
@@ -405,7 +410,20 @@ Under the hood this is the reusable **`skillwriter`** package (`skillwriter.Writ
 
 ## Installation
 
-Make sure you have Go installed. Then:
+### Install script (no Go required)
+
+Downloads a prebuilt binary for your OS/arch from the latest GitHub Release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/parsabordbar/ctx3/main/install.sh | sh
+```
+
+Supports macOS and Linux (amd64/arm64). It installs to `/usr/local/bin` when
+writable, otherwise `~/.local/bin` — override with `CTX3_INSTALL_DIR`, or pin a
+version with `CTX3_VERSION=v0.1.0`. On Windows, download the `.zip` from the
+[releases page](https://github.com/parsabordbar/ctx3/releases) or use `go install`.
+
+### With Go
 
 ```bash
 go install github.com/parsabordbar/ctx3@latest
@@ -418,6 +436,24 @@ ctx3 --help
 ctx3 version
 ```
 
+### Shell completion
+
+Tab-complete commands and directory arguments (`ctx3 pa`<kbd>Tab</kbd> → `pack`,
+`ctx3 pack `<kbd>Tab</kbd> → directories). Enable it once for your shell:
+
+```bash
+# zsh — add to a directory on your $fpath
+ctx3 completion zsh > "${fpath[1]}/_ctx3"
+
+# bash
+ctx3 completion bash > /usr/local/etc/bash_completion.d/ctx3
+
+# fish
+ctx3 completion fish > ~/.config/fish/completions/ctx3.fish
+```
+
+Run `ctx3 completion --help` for the full per-shell instructions.
+
 ## Updating
 
 Update in place to the latest tagged release:
@@ -428,8 +464,12 @@ ctx3 update --check    # just report the latest version, install nothing
 ```
 
 `update` asks the Go module proxy what `@latest` resolves to, then runs
-`go install github.com/parsabordbar/ctx3@latest`. It needs Go on your `PATH`
-(same as the install step). Without Go, run that `go install` line manually.
+`go install github.com/parsabordbar/ctx3@latest`. It needs Go on your `PATH`.
+Without Go, re-run the install script to grab the latest prebuilt binary:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/parsabordbar/ctx3/main/install.sh | sh
+```
 
 ## Build From Source
 
