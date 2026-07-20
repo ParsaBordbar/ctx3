@@ -50,3 +50,9 @@ _testmain.go
 
 # Local coding-agent config / generated skills
 .claude/
+
+# GoReleaser build output
+dist/
+
+# Local ctx3 output
+out.xml
