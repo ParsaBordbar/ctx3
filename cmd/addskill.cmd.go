@@ -78,7 +78,7 @@ Examples:
 			return err
 		}
 
-		fmt.Fprintf(os.Stderr, "✓ Installed skill %q (%d files) to %s [%s scope]\n", name, len(files), dir, skillScope)
+		fmt.Fprintf(os.Stderr, "%s Installed skill %q (%d files) to %s [%s scope]\n", glyph("✓", "+"), name, len(files), dir, skillScope)
 		fmt.Fprintf(os.Stderr, "  Restart %s to pick it up.\n", tgt.Name)
 		reportShadowing(tgt, name)
 		return nil
@@ -105,7 +105,7 @@ func reportShadowing(tgt target.Target, name string) {
 				continue
 			}
 			if sd.Scope.Priority < sc.Priority {
-				fmt.Fprintf(os.Stderr, "⚠ %q also exists in the %s scope (%s) — that one wins, this copy will not load. Rename with --name.\n",
+				fmt.Fprintf(os.Stderr, "%s %q also exists in the %s scope (%s) — that one wins, this copy will not load. Rename with --name.\n", glyph("⚠", "!"),
 					name, sd.Scope.Name, e.Dir)
 			} else {
 				fmt.Fprintf(os.Stderr, "ℹ %q also exists in the %s scope (%s) — this copy takes priority over it.\n",

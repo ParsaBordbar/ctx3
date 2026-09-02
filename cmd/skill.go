@@ -173,9 +173,9 @@ func emitSkill(command string, skill skillwriter.Skill, projectRoot, outputPath 
 		return err
 	}
 	for _, w := range skill.Lint() {
-		fmt.Fprintf(os.Stderr, "⚠ %s\n", w)
+		fmt.Fprintf(os.Stderr, "%s %s\n", glyph("⚠", "!"), w)
 	}
-	fmt.Fprintf(os.Stderr, "✓ Wrote skill %q (%d files) to %s [%s scope]\n", skill.Name, len(files), skillDir, skillScope)
+	fmt.Fprintf(os.Stderr, "%s Wrote skill %q (%d files) to %s [%s scope]\n", glyph("✓", "+"), skill.Name, len(files), skillDir, skillScope)
 	fmt.Fprintf(os.Stderr, "  %s will load it when a task matches its description. Re-run with --force to refresh.\n", tgt.Name)
 	warnShadowed(tgt, skill.Name, projectRoot)
 	return nil
@@ -207,7 +207,7 @@ func warnShadowed(tgt target.Target, name, projectRoot string) {
 		}
 		for _, e := range entries {
 			if e.Name == name {
-				fmt.Fprintf(os.Stderr, "⚠ shadowed: %q also exists in the %s scope (%s), which wins. Rename this one to make it load.\n",
+				fmt.Fprintf(os.Stderr, "%s shadowed: %q also exists in the %s scope (%s), which wins. Rename this one to make it load.\n", glyph("⚠", "!"),
 					name, sd.Scope.Name, e.Dir)
 			}
 		}

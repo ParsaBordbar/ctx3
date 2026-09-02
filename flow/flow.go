@@ -399,10 +399,10 @@ func degradedBannerStyled(g *CallGraph, indent string, st style.Palette) string 
 		return ""
 	}
 	if st.Enabled() {
-		return st.Warn(strings.TrimRight(degradedBanner(g, indent), "\n")) + "\n\n"
+		return st.Warn(strings.TrimRight(degradedBannerStyled(g, indent, style.Plain.WithEmoji(st.Emoji())), "\n")) + "\n\n"
 	}
 	var sb strings.Builder
-	sb.WriteString(indent + "⚠ parse-only analysis — this tree does not type-check.\n")
+	sb.WriteString(indent + st.Glyph("⚠", "!") + " parse-only analysis — this tree does not type-check.\n")
 	sb.WriteString(indent + "  Calls are resolved by name: a method called on a value is linked\n")
 	sb.WriteString(indent + "  only when one type in the module declares it, so some edges are missing.\n")
 	for _, n := range g.Notes {
@@ -442,7 +442,7 @@ func renderTextNode(sb *strings.Builder, g *CallGraph, key, prefix, childPrefix 
 
 	label := st.Accent(node.Package + "." + node.Name)
 	if node.IsEntry {
-		label += " 🚀"
+		label += st.Glyph(" 🚀", " [entry]")
 	}
 	fmt.Fprintf(sb, "%s%s  %s\n", st.Dim(prefix), label, st.Dim(fmt.Sprintf("(%s:%d)", node.File, node.Line)))
 

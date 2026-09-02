@@ -490,6 +490,8 @@ ctx3 diff-context origin/main -t   # TOON for a review agent
 
 Text views (`map`, `functions`, `deps`, `flow`, `impact`, `git`, `brief`, `diff-context`, `percentage`) are colored when stdout is a terminal: titles and symbol names stand out, locations and tree glyphs are dimmed, statuses and cycles are green/yellow/red. A pipe, a file (`-o`), an MCP result, JSON/TOON/Markdown/grep output and `NO_COLOR` all get plain text. Force it either way with the global `--color always|never`. Token estimates ignore the escapes.
 
+Entry points are marked `🚀`, statuses `✓` / `⚠` / `✘`. The global `--no-emoji` swaps every one of them for an ASCII marker (`[entry]`, `+`, `!`, `x`) — for a log file, a font without the glyphs, or an agent transcript that should stay plain. It applies to files and `-o -` as well, independent of `--color`.
+
 ### Token accounting
 
 Every command prints a token estimate for what it just wrote on **stderr** (`≈ 1,234 tokens`, bytes ÷ 4, deterministic) so an agent can pick a view by cost. Silence it with the global `--no-tokens`. `pack`, `map`, `flow`, `brief` and `diff-context` take `--budget <tokens>` and trim to fit: `pack` stops adding files, `map` drops trailing symbols (JSON/TOON stay valid), `flow` truncates the rendering on a line boundary, and `brief` / `diff-context` trim structurally so the most important part survives.

@@ -150,6 +150,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&plainHome, "plain", false, "Print the static home screen instead of the interactive menu")
 	rootCmd.PersistentFlags().BoolVar(&quietTokens, "no-tokens", false, "Suppress the token estimate printed on stderr")
 	rootCmd.PersistentFlags().StringVar(&colorMode, "color", "auto", "Color text output: auto|always|never (auto = only on a terminal; NO_COLOR honored)")
+	rootCmd.PersistentFlags().BoolVar(&noEmoji, "no-emoji", false, "Use plain ASCII markers instead of emoji and symbols in text output")
 	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(percentageCmd)
 }

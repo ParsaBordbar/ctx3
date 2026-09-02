@@ -39,7 +39,7 @@ func RenderStyled(g *Graph, st style.Palette) string {
 	}
 
 	if len(g.Cycles) > 0 {
-		sb.WriteString("\n" + st.Err("⚠  Circular imports detected:") + "\n")
+		sb.WriteString("\n" + st.Err(st.Glyph("⚠", "!")+"  Circular imports detected:") + "\n")
 		for _, cyc := range g.Cycles {
 			short := make([]string, len(cyc))
 			for i, c := range cyc {
@@ -48,7 +48,7 @@ func RenderStyled(g *Graph, st style.Palette) string {
 			fmt.Fprintf(&sb, "   %s\n", st.Err(strings.Join(short, " → ")+" → "+short[0]))
 		}
 	} else {
-		sb.WriteString("\n" + st.Ok("✓ No circular imports.") + "\n")
+		sb.WriteString("\n" + st.Ok(st.Glyph("✓", "+")+" No circular imports.") + "\n")
 	}
 
 	sb.WriteString(st.Dim(fmt.Sprintf("\n%d internal packages", len(g.Order))) + "\n")

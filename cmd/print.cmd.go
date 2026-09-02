@@ -25,7 +25,7 @@ Examples:
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		out := "┌── 📂 Project structure:\n" + filetree.Render(filetree.Config{
+		out := "┌── " + glyph("📂 ", "") + "Project structure:\n" + filetree.Render(filetree.Config{
 			Root:     dirArg(args),
 			MaxDepth: printDepth,
 			Sizes:    printSizes,

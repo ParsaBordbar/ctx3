@@ -54,7 +54,7 @@ Examples:
 		if depsCyclesOnly {
 			if len(graph.Cycles) == 0 {
 				if !depsQuiet {
-					fmt.Println("✓ No circular imports.")
+					fmt.Println(glyph("✓", "+") + " No circular imports.")
 				}
 				return nil
 			}

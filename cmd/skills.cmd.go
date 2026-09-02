@@ -103,7 +103,7 @@ Examples:
 			}
 			skill, err := buildDomainSkill(dom, dir, name)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "⚠ %s: skipped (%v)\n", dom, err)
+				fmt.Fprintf(os.Stderr, "%s %s: skipped (%v)\n", glyph("⚠", "!"), dom, err)
 				failed++
 				continue
 			}
@@ -111,14 +111,14 @@ Examples:
 			skill.Scripts = append(skill.Scripts, refreshScript(domainCommand[dom], dir))
 			skillDir, files, err := skillwriter.Write(cfg, *skill)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "⚠ %s: %v\n", dom, err)
+				fmt.Fprintf(os.Stderr, "%s %s: %v\n", glyph("⚠", "!"), dom, err)
 				failed++
 				continue
 			}
 			for _, w := range skill.Lint() {
-				fmt.Fprintf(os.Stderr, "  ⚠ %s: %s\n", dom, w)
+				fmt.Fprintf(os.Stderr, "  %s %s: %s\n", glyph("⚠", "!"), dom, w)
 			}
-			fmt.Fprintf(os.Stderr, "✓ %s → skill %q (%d files) at %s\n", dom, skill.Name, len(files), skillDir)
+			fmt.Fprintf(os.Stderr, "%s %s → skill %q (%d files) at %s\n", glyph("✓", "+"), dom, skill.Name, len(files), skillDir)
 			warnShadowed(tgt, skill.Name, dir)
 			built++
 		}
@@ -157,12 +157,12 @@ func listSkills(as, projectRoot string) error {
 		for _, e := range entries {
 			switch {
 			case e.Err != nil:
-				fmt.Printf("  ✘ %-28s %v\n", e.Name, e.Err)
+				fmt.Printf("  %s %-28s %v\n", glyph("✘", "x"), e.Name, e.Err)
 			case winner[e.Name] != "":
-				fmt.Printf("  ⊘ %-28s shadowed by the %s scope\n", e.Name, winner[e.Name])
+				fmt.Printf("  %s %-28s shadowed by the %s scope\n", glyph("⊘", "-"), e.Name, winner[e.Name])
 			default:
 				winner[e.Name] = sd.Scope.Name
-				fmt.Printf("  ✓ %-28s %s\n", e.Name, truncate(e.Description, 70))
+				fmt.Printf("  %s %-28s %s\n", glyph("✓", "+"), e.Name, truncate(e.Description, 70))
 			}
 		}
 		fmt.Println()

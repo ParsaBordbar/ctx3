@@ -198,7 +198,7 @@ func renderCallers(sb *strings.Builder, g *CallGraph, rev map[string][]string, k
 		node := g.Nodes[c]
 		label := st.Accent(c)
 		if node.IsEntry {
-			label += " 🚀"
+			label += st.Glyph(" 🚀", " [entry]")
 		}
 		fmt.Fprintf(sb, "%s%s  %s\n", st.Dim(prefix+branch), label, st.Dim(fmt.Sprintf("(%s:%d)", node.File, node.Line)))
 

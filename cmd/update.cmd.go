@@ -35,7 +35,7 @@ toolchain (go install ` + version.Module + `@latest).
 		fmt.Printf("Latest:  %s\n", latest)
 
 		if latest == current {
-			fmt.Println("✓ Already up to date.")
+			fmt.Println(glyph("✓", "+") + " Already up to date.")
 			return nil
 		}
 		if updateCheckOnly {
@@ -56,7 +56,7 @@ toolchain (go install ` + version.Module + `@latest).
 		if err := install.Run(); err != nil {
 			return fmt.Errorf("go install failed: %w", err)
 		}
-		fmt.Printf("✓ Updated to %s.\n", latest)
+		fmt.Printf("%s Updated to %s.\n", glyph("✓", "+"), latest)
 		return nil
 	},
 }

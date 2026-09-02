@@ -55,7 +55,7 @@ Examples:
 			data, _ := json.MarshalIndent(encodable, "", "  ")
 			fmt.Println(string(data))
 		default:
-			fmt.Printf("📂 Project: %s\n", ctx.Root)
+			fmt.Printf("%sProject: %s\n", glyph("📂 ", ""), ctx.Root)
 			fmt.Printf("Files: %d, Dirs: %d\n", ctx.TotalFiles, ctx.TotalDirs)
 			if len(ctx.Dependencies) > 0 {
 				fmt.Printf("Dependencies (%d direct", len(ctx.Dependencies))

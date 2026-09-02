@@ -214,7 +214,7 @@ func RenderPackageFlowStyled(pf *PackageFlow, st style.Palette) string {
 		if len(p.Out) == 0 {
 			continue
 		}
-		fmt.Fprintf(&sb, "  %s%s  %s\n", st.Name(p.Name), entryMark(p), st.Dim(packageSummary(p)))
+		fmt.Fprintf(&sb, "  %s%s  %s\n", st.Name(p.Name), entryMark(p, st), st.Dim(packageSummary(p)))
 		for _, row := range groupByWeight(p.Out) {
 			fmt.Fprintf(&sb, "      %s%s%s  %s\n", st.Dim("──"), st.Warn(fmt.Sprintf("%*d", width, row.calls)), st.Dim("──▶"), st.Accent(strings.Join(row.to, ", ")))
 		}
@@ -229,9 +229,9 @@ func RenderPackageFlowStyled(pf *PackageFlow, st style.Palette) string {
 }
 
 // entryMark flags packages that execution can start in.
-func entryMark(p PackageNode) string {
+func entryMark(p PackageNode, st style.Palette) string {
 	if p.Entries > 0 {
-		return " 🚀"
+		return st.Glyph(" 🚀", " [entry]")
 	}
 	return ""
 }

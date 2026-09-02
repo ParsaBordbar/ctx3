@@ -56,7 +56,7 @@ func RenderStyled(c *Context, st style.Palette) string {
 			for _, cl := range s.Callers {
 				mark := ""
 				if cl.IsEntry {
-					mark = " 🚀"
+					mark = st.Glyph(" 🚀", " [entry]")
 				}
 				fmt.Fprintf(&sb, "      %s %s%s  %s\n", st.Dim("←"), st.Accent(cl.Key), mark,
 					st.Dim(fmt.Sprintf("(%s:%d)", cl.File, cl.Line)))

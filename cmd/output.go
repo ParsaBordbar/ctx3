@@ -19,13 +19,19 @@ import (
 var (
 	quietTokens bool
 	colorMode   string
+	noEmoji     bool
 )
 
 func outStyle(path string) (style.Palette, error) {
 	if path != "" && path != "-" {
-		return style.Plain, nil
+		return style.Plain.WithEmoji(!noEmoji), nil
 	}
-	return style.Resolve(colorMode, os.Stdout)
+	st, err := style.Resolve(colorMode, os.Stdout)
+	return st.WithEmoji(!noEmoji), err
+}
+
+func glyph(emoji, ascii string) string {
+	return style.Plain.WithEmoji(!noEmoji).Glyph(emoji, ascii)
 }
 
 func fitBudget(output string, budget int) string {

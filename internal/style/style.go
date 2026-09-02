@@ -9,7 +9,7 @@ import (
 	"github.com/parsabordbar/ctx3/internal/mascot"
 )
 
-type Palette struct{ on bool }
+type Palette struct{ on, noEmoji bool }
 
 var (
 	Plain = Palette{}
@@ -50,6 +50,20 @@ func Resolve(mode string, f *os.File) (Palette, error) {
 }
 
 func (p Palette) Enabled() bool { return p.on }
+
+func (p Palette) Emoji() bool { return !p.noEmoji }
+
+func (p Palette) WithEmoji(on bool) Palette {
+	p.noEmoji = !on
+	return p
+}
+
+func (p Palette) Glyph(emoji, ascii string) string {
+	if p.noEmoji {
+		return ascii
+	}
+	return emoji
+}
 
 func (p Palette) wrap(code, s string) string {
 	if !p.on || s == "" {

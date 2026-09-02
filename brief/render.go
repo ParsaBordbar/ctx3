@@ -44,7 +44,7 @@ func RenderStyled(b *Brief, st style.Palette) string {
 			for _, c := range h.Callers {
 				mark := ""
 				if c.IsEntry {
-					mark = " 🚀"
+					mark = st.Glyph(" 🚀", " [entry]")
 				}
 				fmt.Fprintf(&sb, "     %s%s  %s\n", st.Accent(c.Key), mark,
 					st.Dim(fmt.Sprintf("(%s:%d, depth %d)", c.File, c.Line, c.Depth)))
