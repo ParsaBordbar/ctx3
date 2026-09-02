@@ -7,8 +7,14 @@ import (
 	"github.com/parsabordbar/ctx3/skillwriter"
 )
 
-// Skill builds a fact-only progressive-disclosure skill describing the project's databases and relational schema.
-func (r *Report) Skill() skillwriter.Skill {
+// Skill builds a fact-only progressive-disclosure skill describing the project's
+// databases and relational schema. name seeds the skill name; when empty it
+// falls back to the project name the report carries. Callers in a bundle pass
+// the same name to every domain so the skills read as one family.
+func (r *Report) Skill(name string) skillwriter.Skill {
+	if name == "" {
+		name = r.Project
+	}
 	names := make([]string, 0, len(r.Engines))
 	for _, e := range r.Engines {
 		names = append(names, e.Name)
@@ -55,7 +61,7 @@ func (r *Report) Skill() skillwriter.Skill {
 	}
 
 	return skillwriter.Skill{
-		Name:        skillBase(r.Project) + "-db",
+		Name:        skillBase(name) + "-db",
 		Description: desc,
 		Overview:    overview,
 		References:  refs,

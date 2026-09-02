@@ -31,6 +31,9 @@ type walkResult struct {
 
 // WalkAndCollect walks cfg.RootDir and returns files + a directory tree.
 // Precedence: hard excludes (.git/node_modules) → includes (if any) → ignores/.gitignore
+//
+// Three phases: pick the candidate paths (single-threaded, builds the tree),
+// order them deterministically, then read their contents concurrently.
 func WalkAndCollect(ctx context.Context, cfg Config) ([]FileEntry, *dirNode, Report, error) {
 	if cfg.RootDir == "" {
 		return nil, nil, Report{}, errors.New("empty RootDir")
@@ -39,22 +42,39 @@ func WalkAndCollect(ctx context.Context, cfg Config) ([]FileEntry, *dirNode, Rep
 	if err != nil {
 		return nil, nil, Report{}, err
 	}
-	// Load .gitignore at repo root
-	var gitIg *ignore.GitIgnore
-	if cfg.RespectGitignore {
-		if gi := loadGitignore(rootAbs); gi != nil {
-			gitIg = gi
-		}
-	}
 
 	tree := &dirNode{Name: ".", Children: nil, Files: nil}
-	byDir := map[string]*dirNode{".": tree}
 	result := walkResult{rootTree: tree}
 
+	candidates, err := collectCandidates(rootAbs, cfg, tree, &result.report)
+	if err != nil {
+		return nil, nil, result.report, err
+	}
+	sortCandidates(candidates, cfg.SortByExt)
+
+	files, total, firstErr := readCandidates(ctx, rootAbs, candidates, cfg, &result.report)
+
+	result.files = files
+	result.report.FilesIncluded = len(files)
+	result.report.TotalBytes = total
+	return result.files, result.rootTree, result.report, firstErr
+}
+
+// collectCandidates walks the tree once, deciding which files to pack and
+// filling in the directory nodes as it goes. Filter precedence is the one
+// documented on WalkAndCollect: hard excludes, then includes, then ignores.
+func collectCandidates(rootAbs string, cfg Config, tree *dirNode, report *Report) ([]string, error) {
+	var gitIg *ignore.GitIgnore
+	if cfg.RespectGitignore {
+		gitIg = loadGitignore(rootAbs)
+	}
+
+	byDir := map[string]*dirNode{".": tree}
 	candidates := []string{}
-	err = filepath.WalkDir(rootAbs, func(p string, d fs.DirEntry, werr error) error {
+
+	err := filepath.WalkDir(rootAbs, func(p string, d fs.DirEntry, werr error) error {
 		if werr != nil {
-			result.report.Warnings = append(result.report.Warnings, werr.Error())
+			report.Warnings = append(report.Warnings, werr.Error())
 			return nil
 		}
 		rel, _ := filepath.Rel(rootAbs, p)
@@ -72,16 +92,12 @@ func WalkAndCollect(ctx context.Context, cfg Config) ([]FileEntry, *dirNode, Rep
 		}
 
 		// includes (highest precedence)
-		included := true
 		if len(cfg.IncludeGlobs) > 0 {
-			included = anyGlobMatch(rel, cfg.IncludeGlobs)
-		}
-		if !included {
-			return nil
-		}
-
-		// if not explicitly included, apply ignores
-		if len(cfg.IncludeGlobs) == 0 {
+			if !anyGlobMatch(rel, cfg.IncludeGlobs) {
+				return nil
+			}
+		} else {
+			// not explicitly included: apply ignores
 			if gitIg != nil && gitIg.MatchesPath(rel) {
 				return nil
 			}
@@ -93,37 +109,51 @@ func WalkAndCollect(ctx context.Context, cfg Config) ([]FileEntry, *dirNode, Rep
 		// per-file cap
 		if cfg.MaxFileBytes > 0 {
 			if info, ierr := os.Stat(p); ierr == nil && info.Size() > cfg.MaxFileBytes {
-				result.report.FilesSkipped++
+				report.FilesSkipped++
 				return nil
 			}
 		}
 
 		candidates = append(candidates, rel)
-		parentDir := parent(rel)
-		node := ensureDirNode(byDir, parentDir)
+		node := ensureDirNode(byDir, parent(rel))
 		node.Files = append(node.Files, rel)
 		return nil
 	})
-	if err != nil {
-		return nil, nil, result.report, err
-	}
+	return candidates, err
+}
 
-	// deterministic order
-	if cfg.SortByExt {
-		sort.Slice(candidates, func(i, j int) bool {
-			exti := strings.ToLower(filepath.Ext(candidates[i]))
-			extj := strings.ToLower(filepath.Ext(candidates[j]))
-			if exti == extj {
-				return candidates[i] < candidates[j]
-			}
-			return exti < extj
-		})
-	} else {
+// sortCandidates fixes the packing order. Output determinism is a promise of
+// this package, so this is the only place order is decided.
+func sortCandidates(candidates []string, byExt bool) {
+	if !byExt {
 		sort.Strings(candidates)
+		return
 	}
+	sort.Slice(candidates, func(i, j int) bool {
+		exti := strings.ToLower(filepath.Ext(candidates[i]))
+		extj := strings.ToLower(filepath.Ext(candidates[j]))
+		if exti == extj {
+			return candidates[i] < candidates[j]
+		}
+		return exti < extj
+	})
+}
 
-	// Read contents with total cap + binary handling
-	concurrency := cfg.normalizedConcurrency()
+type readOut struct {
+	entry         FileEntry
+	err           error
+	skipped       bool
+	skippedReason string
+	size          int64
+}
+
+// readCandidates reads file contents on a worker pool and reduces the results
+// in candidate order-independent fashion, applying the total-byte cap.
+//
+// Every worker emits exactly one result per item it consumes — including when
+// the context is cancelled — because the reducer below waits for len(candidates)
+// results and would otherwise block forever on a cancelled pack.
+func readCandidates(ctx context.Context, rootAbs string, candidates []string, cfg Config, report *Report) ([]FileEntry, int64, error) {
 	type readItem struct{ rel, pth string }
 	items := make(chan readItem, len(candidates))
 	for _, rel := range candidates {
@@ -131,27 +161,19 @@ func WalkAndCollect(ctx context.Context, cfg Config) ([]FileEntry, *dirNode, Rep
 	}
 	close(items)
 
-	type outItem struct {
-		entry         FileEntry
-		err           error
-		skipped       bool
-		skippedReason string
-		size          int64
-	}
-
-	out := make(chan outItem, len(candidates))
-	workers := minInt(concurrency, maxInt(1, len(candidates)))
-	for w := 0; w < workers; w++ {
+	out := make(chan readOut, len(candidates))
+	workers := minInt(cfg.normalizedConcurrency(), maxInt(1, len(candidates)))
+	for range workers {
 		go func() {
 			for it := range items {
 				select {
 				case <-ctx.Done():
-					out <- outItem{err: ctx.Err()}
-					return
+					out <- readOut{err: ctx.Err(), skipped: true}
+					continue
 				default:
 				}
 				entry, size, skipped, reason, rerr := readOne(it.rel, it.pth, cfg)
-				out <- outItem{entry: entry, err: rerr, size: size, skipped: skipped, skippedReason: reason}
+				out <- readOut{entry: entry, err: rerr, size: size, skipped: skipped, skippedReason: reason}
 			}
 		}()
 	}
@@ -159,31 +181,27 @@ func WalkAndCollect(ctx context.Context, cfg Config) ([]FileEntry, *dirNode, Rep
 	var picked []FileEntry
 	var total int64
 	var firstErr error
-	for i := 0; i < len(candidates); i++ {
+	for range candidates {
 		oi := <-out
 		if oi.err != nil && firstErr == nil {
 			firstErr = oi.err
 		}
 		if oi.skipped {
-			result.report.FilesSkipped++
+			report.FilesSkipped++
 			if oi.skippedReason != "" {
-				result.report.Warnings = append(result.report.Warnings, oi.skippedReason)
+				report.Warnings = append(report.Warnings, oi.skippedReason)
 			}
 			continue
 		}
 		if cfg.MaxTotalBytes > 0 && total+oi.size > cfg.MaxTotalBytes {
-			result.report.FilesSkipped++
-			result.report.Warnings = append(result.report.Warnings, "max total bytes exceeded; remaining files skipped")
+			report.FilesSkipped++
+			report.Warnings = append(report.Warnings, "max total bytes exceeded; remaining files skipped")
 			continue
 		}
 		picked = append(picked, oi.entry)
 		total += oi.size
 	}
-
-	result.files = picked
-	result.report.FilesIncluded = len(picked)
-	result.report.TotalBytes = total
-	return result.files, result.rootTree, result.report, firstErr
+	return picked, total, firstErr
 }
 
 func readOne(rel, abs string, cfg Config) (FileEntry, int64, bool, string, error) {

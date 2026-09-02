@@ -1,12 +1,9 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/parsabordbar/ctx3/flow"
-	toon "github.com/toon-format/toon-go"
 
 	"github.com/spf13/cobra"
 )
@@ -32,7 +29,8 @@ The symbol is matched against the graph as an exact "pkg.Func" / "pkg.Recv.Metho
 key first, then by bare function or method name, then as a substring. Every match
 is reported, so an ambiguous name shows all candidates rather than guessing.
 
-Requires a type-checkable module (same as ` + "`flow`" + `).
+Go only. Type-checks the module when it compiles; when it does not, it falls
+back to parse-only analysis and says so — treat "no callers" as unproven then.
 
 Examples:
   ctx3 impact Scan                      # who calls any Scan
@@ -55,33 +53,18 @@ Examples:
 
 		var output string
 		switch {
-		case impactJSON:
-			b, err := json.MarshalIndent(imp, "", "  ")
+		case impactJSON, impactTOON:
+			output, err = encodeStructured(imp, impactTOON)
 			if err != nil {
 				return err
 			}
-			output = string(b)
-		case impactTOON:
-			b, err := toon.Marshal(imp)
-			if err != nil {
-				return err
-			}
-			output = string(b)
 		case impactMermaid:
 			output = flow.RenderImpactMermaid(imp)
 		default:
 			output = flow.RenderImpactText(imp)
 		}
 
-		if impactOutput != "" && impactOutput != "-" {
-			if err := os.WriteFile(impactOutput, []byte(output), 0o644); err != nil {
-				return fmt.Errorf("writing output: %w", err)
-			}
-			fmt.Fprintf(os.Stderr, "Impact report written to %s\n", impactOutput)
-			return nil
-		}
-		fmt.Println(output)
-		return nil
+		return writeOut(output, impactOutput, "Impact report")
 	},
 }
 

@@ -2,24 +2,18 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/parsabordbar/ctx3/flow"
-	"github.com/parsabordbar/ctx3/skillwriter"
-	"github.com/parsabordbar/ctx3/target"
 	"github.com/spf13/cobra"
 )
 
 var (
+	flowBudget     int
 	flowMermaid    bool
+	flowPackages   bool
 	flowOutputPath string
 	flowEntryOnly  bool
 	flowDepth      int
-	flowSkill      bool
-	flowAs         string
-	flowForce      bool
 )
 
 var flowCmd = &cobra.Command{
@@ -27,13 +21,25 @@ var flowCmd = &cobra.Command{
 	Short: "Analyze and visualize code flow / call graph",
 	Long: `Analyze the call graph and code flow of a Go project.
 
+Type-checks the module for precise call resolution. When the tree does not
+compile — mid-refactor, partial checkout — it falls back to parse-only analysis
+and marks the result degraded: calls resolve by name, so a method called on a
+value is linked only when one type in the module declares it.
+
+Views:
+  - Default: tree of function calls from each entry point
+  - Packages (-p): the graph collapsed to package granularity — who calls whom,
+    weighted by call sites. The function tree is unreadable past a few hundred
+    functions; this stays one screen and answers how the system fans out.
+
 Output formats:
-  - Default: Human-readable tree of function calls
-  - Mermaid (-m): Flowchart in Mermaid markdown format (saves to file with -o)
+  - Text (default), or Mermaid (-m) markdown; combine -p -m for a package diagram
+  - -o writes to a file instead of stdout
 
 Examples:
   ctx3 flow .
-  ctx3 flow . --mermaid
+  ctx3 flow . --packages               # package-level map
+  ctx3 flow . --packages --mermaid     # package diagram that actually renders
   ctx3 flow . --mermaid -o flow.md
   ctx3 flow . --entry-only --depth 3
   ctx3 flow . --skill                  # write a Claude Code skill
@@ -41,10 +47,7 @@ Examples:
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dir := "."
-		if len(args) > 0 {
-			dir = args[0]
-		}
+		dir := dirArg(args)
 
 		cfg := flow.Config{
 			RootDir:   dir,
@@ -57,86 +60,33 @@ Examples:
 			return fmt.Errorf("flow analysis failed: %w", err)
 		}
 
-		if flowSkill {
-			return emitFlowSkill(graph, dir)
+		if skillEmit {
+			return emitSkill("flow", graph.Skill(projectBaseName(dir)), dir, flowOutputPath)
 		}
 
 		var output string
-		if flowMermaid {
+		switch {
+		case flowPackages && flowMermaid:
+			output = flow.RenderPackageMermaid(flow.PackageGraph(graph, projectBaseName(dir)))
+		case flowPackages:
+			output = flow.RenderPackageFlow(flow.PackageGraph(graph, projectBaseName(dir)))
+		case flowMermaid:
 			output = flow.RenderMermaid(graph)
-		} else {
+		default:
 			output = flow.RenderText(graph)
 		}
 
-		if flowOutputPath != "" {
-			if err := os.WriteFile(flowOutputPath, []byte(output), 0o644); err != nil {
-				return fmt.Errorf("writing output: %w", err)
-			}
-			fmt.Fprintf(os.Stderr, "Flow written to %s\n", flowOutputPath)
-		} else {
-			fmt.Print(output)
-		}
-
-		return nil
+		return writeOut(fitBudget(output, flowBudget), flowOutputPath, "Flow")
 	},
-}
-
-// emitFlowSkill writes the call-graph skill, or prints SKILL.md when -o - is used.
-func emitFlowSkill(graph *flow.CallGraph, dir string) error {
-	sel := flowAs
-	if sel == "" {
-		sel = "claude" // skills are a Claude Code convention
-	}
-	tgt, ok := target.Get(sel)
-	if !ok {
-		return fmt.Errorf("unknown --as value %q (want: %v)", flowAs, target.Names())
-	}
-	if !tgt.SupportsSkills() {
-		return fmt.Errorf("target %q does not support skills (skills are a Claude Code convention)", sel)
-	}
-
-	skill := graph.Skill(projectBaseName(dir))
-
-	if flowOutputPath == "-" {
-		fmt.Print(skillwriter.RenderSkillMD(skill))
-		return nil
-	}
-
-	skillDir, files, err := skillwriter.Write(skillwriter.Config{SkillsDir: tgt.SkillDir, Force: flowForce}, skill)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "✓ Wrote skill %q (%d files) to %s\n", skill.Name, len(files), skillDir)
-	fmt.Fprintf(os.Stderr, "  %s will load it when a task matches its description. Re-run with --force to refresh.\n", tgt.Name)
-	return nil
-}
-
-// projectBaseName returns the go.mod module base, else the directory base name.
-func projectBaseName(dir string) string {
-	if data, err := os.ReadFile(filepath.Join(dir, "go.mod")); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.HasPrefix(line, "module ") {
-				mod := strings.TrimSpace(strings.TrimPrefix(line, "module "))
-				if i := strings.LastIndex(mod, "/"); i >= 0 {
-					return mod[i+1:]
-				}
-				return mod
-			}
-		}
-	}
-	if abs, err := filepath.Abs(dir); err == nil {
-		return filepath.Base(abs)
-	}
-	return "project"
 }
 
 func init() {
 	flowCmd.Flags().BoolVarP(&flowMermaid, "mermaid", "m", false, "Output as Mermaid flowchart markdown")
+	flowCmd.Flags().BoolVarP(&flowPackages, "packages", "p", false, "Collapse the graph to package granularity (one-screen fan-out map)")
 	flowCmd.Flags().StringVarP(&flowOutputPath, "output", "o", "", "Write output to file (default: stdout)")
 	flowCmd.Flags().BoolVar(&flowEntryOnly, "entry-only", false, "Only trace calls from entry point files (main.go, etc.)")
 	flowCmd.Flags().IntVar(&flowDepth, "depth", 0, "Maximum call depth to trace (0 = unlimited)")
-	flowCmd.Flags().BoolVar(&flowSkill, "skill", false, "Emit a coding-agent skill (SKILL.md + reference files) instead of printing; use -o - to preview")
-	flowCmd.Flags().StringVar(&flowAs, "as", "", "target tool for --skill (default: claude)")
-	flowCmd.Flags().BoolVar(&flowForce, "force", false, "Overwrite an existing skill directory")
+	flowCmd.Flags().IntVar(&flowBudget, "budget", 0, "Token budget: truncate the rendering to fit (0 = unlimited)")
+	bindSkillEmitFlags(flowCmd.Flags())
 	rootCmd.AddCommand(flowCmd)
 }

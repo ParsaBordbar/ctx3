@@ -75,12 +75,10 @@ func (m launcherModel) View() string {
 			lastGroup = it.group
 		}
 		cursor := "   "
-		name := it.name
+		name := pad(it.name, 11)
 		if i == m.cursor {
 			cursor = " " + blue.Render("▸") + " "
-			name = blue.Render(pad(it.name, 11))
-		} else {
-			name = pad(it.name, 11)
+			name = blue.Render(name)
 		}
 		b = append(b, "  "...)
 		b = append(b, cursor...)

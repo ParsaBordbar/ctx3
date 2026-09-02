@@ -51,10 +51,10 @@ func prettyCwd() string {
 }
 
 var rootCmd = &cobra.Command{
-	Use:     "ctx3",
-	Version: version.Version(),
-	Short:   "ctx3 is a CLI tool to Help you and your favorite LLM understand projects faster!",
-	Long:    `ctx3 helps you visualize and analyze project structure for better understanding (and LLM context).`,
+	Use:           "ctx3",
+	Version:       version.Version(),
+	Short:         "ctx3 is a CLI tool to Help you and your favorite LLM understand projects faster!",
+	Long:          `ctx3 helps you visualize and analyze project structure for better understanding (and LLM context).`,
 	SilenceErrors: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		color := mascot.Colorable(os.Stdout)
@@ -91,15 +91,23 @@ var commandGroups = []struct {
 		{"map", "Symbol index — types, funcs, consts — with file:line"},
 		{"flow", "Call graph & code flow"},
 		{"impact", "Reverse call graph — what calls a function"},
+		{"brief", "Task-scoped context pack under a token budget"},
+		{"diff-context", "Changed symbols, their callers, tests to run"},
 		{"deps", "Internal dependency chain + cycle detection"},
 		{"functions", "Function signatures — args & returns — per file/dir"},
 		{"db", "Detected databases + relational schema diagram"},
+		{"git", "Repo state, recent commits, files that churn most"},
 		{"percentage", "File-type breakdown"},
 	}},
 	{"Output", [][2]string{
 		{"pack", "Pack the repo into one AI-friendly file"},
 		{"print", "Print the file tree"},
 		{"init", "Scaffold an AGENTS.md / CLAUDE.md"},
+	}},
+	{"Agents", [][2]string{
+		{"skills", "Emit the fact-skill bundle (--list to see every scope)"},
+		{"add-skill", "Install a hand-written skill into a scope"},
+		{"mcp", "Serve the analysis as live MCP tools over stdio"},
 	}},
 	{"Manage", [][2]string{
 		{"version", "Print the ctx3 version"},
@@ -140,15 +148,17 @@ func init() {
 	contextCmd.Flags().BoolVarP(&analyzer.OutputJSON, "json", "j", false, "Output as JSON")
 	contextCmd.Flags().BoolVarP(&analyzer.OutputTOON, "toon", "t", false, "Output as TOON")
 	rootCmd.Flags().BoolVar(&plainHome, "plain", false, "Print the static home screen instead of the interactive menu")
+	rootCmd.PersistentFlags().BoolVar(&quietTokens, "no-tokens", false, "Suppress the token estimate printed on stderr")
 	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(percentageCmd)
 }
 
-// dirArgCommands take a [directory] positional.
+// dirArgCommands take a path positional, so completion offers directories.
 var dirArgCommands = map[string]bool{
 	"context": true, "percentage": true, "print": true,
 	"pack": true, "flow": true, "deps": true, "init": true, "db": true,
-	"functions": true, "map": true,
+	"functions": true, "map": true, "skills": true, "add-skill": true,
+	"git": true,
 }
 
 func Execute() {

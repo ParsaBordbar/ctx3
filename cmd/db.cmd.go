@@ -1,14 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-
 	"github.com/parsabordbar/ctx3/db"
-	"github.com/parsabordbar/ctx3/skillwriter"
-	"github.com/parsabordbar/ctx3/target"
-	toon "github.com/toon-format/toon-go"
 
 	"github.com/spf13/cobra"
 )
@@ -19,9 +12,6 @@ var (
 	dbTOON        bool
 	dbOutputPath  string
 	dbEnginesOnly bool
-	dbSkill       bool
-	dbAs          string
-	dbForce       bool
 )
 
 var dbCmd = &cobra.Command{
@@ -50,18 +40,15 @@ Examples:
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dir := "."
-		if len(args) > 0 {
-			dir = args[0]
-		}
+		dir := dirArg(args)
 
 		report, err := db.Analyze(db.Config{RootDir: dir})
 		if err != nil {
 			return err
 		}
 
-		if dbSkill {
-			return emitDBSkill(report)
+		if skillEmit {
+			return emitSkill("db", report.Skill(projectBaseName(dir)), dir, dbOutputPath)
 		}
 		if dbEnginesOnly {
 			report.Schema = nil
@@ -69,64 +56,19 @@ Examples:
 
 		var output string
 		switch {
-		case dbJSON:
-			b, err := json.MarshalIndent(report, "", "  ")
+		case dbJSON, dbTOON:
+			output, err = encodeStructured(report, dbTOON)
 			if err != nil {
 				return err
 			}
-			output = string(b)
-		case dbTOON:
-			b, err := toon.Marshal(report)
-			if err != nil {
-				return err
-			}
-			output = string(b)
 		case dbMermaid:
 			output = db.RenderMermaid(report)
 		default:
 			output = db.RenderText(report)
 		}
 
-		if dbOutputPath != "" && dbOutputPath != "-" {
-			if err := os.WriteFile(dbOutputPath, []byte(output), 0o644); err != nil {
-				return fmt.Errorf("writing output: %w", err)
-			}
-			fmt.Fprintf(os.Stderr, "Database report written to %s\n", dbOutputPath)
-			return nil
-		}
-		fmt.Println(output)
-		return nil
+		return writeOut(output, dbOutputPath, "Database report")
 	},
-}
-
-// emitDBSkill writes the database skill for the selected target.
-func emitDBSkill(report *db.Report) error {
-	sel := dbAs
-	if sel == "" {
-		sel = "claude" // skills are a Claude Code convention
-	}
-	tgt, ok := target.Get(sel)
-	if !ok {
-		return fmt.Errorf("unknown --as value %q (want: %v)", dbAs, target.Names())
-	}
-	if !tgt.SupportsSkills() {
-		return fmt.Errorf("target %q does not support skills (skills are a Claude Code convention)", sel)
-	}
-
-	skill := report.Skill()
-
-	if dbOutputPath == "-" {
-		fmt.Print(skillwriter.RenderSkillMD(skill))
-		return nil
-	}
-
-	dir, files, err := skillwriter.Write(skillwriter.Config{SkillsDir: tgt.SkillDir, Force: dbForce}, skill)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "✓ Wrote skill %q (%d files) to %s\n", skill.Name, len(files), dir)
-	fmt.Fprintf(os.Stderr, "  %s will load it when a task matches its description. Re-run with --force to refresh.\n", tgt.Name)
-	return nil
 }
 
 func init() {
@@ -135,8 +77,6 @@ func init() {
 	dbCmd.Flags().BoolVarP(&dbTOON, "toon", "t", false, "Output as TOON (compact, LLM-optimized)")
 	dbCmd.Flags().StringVarP(&dbOutputPath, "output", "o", "", "Write output to file (default: stdout)")
 	dbCmd.Flags().BoolVar(&dbEnginesOnly, "engines-only", false, "Only list detected databases, skip the schema")
-	dbCmd.Flags().BoolVar(&dbSkill, "skill", false, "Emit a coding-agent skill (SKILL.md + reference files) instead of printing; use -o - to preview")
-	dbCmd.Flags().StringVar(&dbAs, "as", "", "target tool for --skill (default: claude)")
-	dbCmd.Flags().BoolVar(&dbForce, "force", false, "Overwrite an existing skill directory")
+	bindSkillEmitFlags(dbCmd.Flags())
 	rootCmd.AddCommand(dbCmd)
 }

@@ -346,9 +346,14 @@ func TestSkill_TriggersAndReferences(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "schema.sql", "CREATE TABLE users (id uuid PRIMARY KEY);")
 
-	skill := analyze(t, dir).Skill()
-	if !strings.HasSuffix(skill.Name, "-db") {
-		t.Fatalf("skill name should end in -db: %q", skill.Name)
+	skill := analyze(t, dir).Skill("myproj")
+	if skill.Name != "myproj-db" {
+		t.Fatalf("skill name should be myproj-db, got %q", skill.Name)
+	}
+	// An empty name falls back to the project the report carries, so a
+	// standalone caller still gets a sensible skill.
+	if fallback := analyze(t, dir).Skill(""); !strings.HasSuffix(fallback.Name, "-db") {
+		t.Fatalf("fallback name should end in -db: %q", fallback.Name)
 	}
 	if !strings.Contains(skill.Description, "schema") {
 		t.Fatalf("skill description should trigger on schema questions: %q", skill.Description)

@@ -118,12 +118,91 @@ func TestPack_UnsupportedFormat(t *testing.T) {
 	mustWrite(t, filepath.Join(td, "f.txt"), []byte("z"))
 	cfg := Config{
 		RootDir:      td,
-		OutputFormat: FormatMD, // TODO: not implemented yet
+		OutputFormat: OutputFormat("yaml"),
 		Sections:     Sections{Structure: true, Files: true},
 	}
 	_, _, err := Pack(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "unsupported format") {
 		t.Fatalf("expected unsupported format error, got: %v", err)
+	}
+}
+
+func TestPack_Markdown(t *testing.T) {
+	td := t.TempDir()
+	mustWrite(t, filepath.Join(td, "main.go"), []byte("package main\n"))
+	mustWrite(t, filepath.Join(td, "notes.md"), []byte("hi\n"))
+
+	out, _, err := Pack(context.Background(), Config{
+		RootDir:      td,
+		OutputFormat: FormatMD,
+		Sections:     Sections{Structure: true, Files: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+
+	for _, want := range []string{
+		"# Directory structure",
+		"# Files",
+		"## main.go",
+		"```go\npackage main\n```",
+		"## notes.md",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in:\n%s", want, s)
+		}
+	}
+}
+
+func TestPack_MarkdownFenceSurvivesBackticksInContent(t *testing.T) {
+	// A file containing a fence would close the block early and corrupt every
+	// section after it, so the wrapper fence has to be longer.
+	td := t.TempDir()
+	mustWrite(t, filepath.Join(td, "doc.md"), []byte("```\ncode\n```\n"))
+
+	out, _, err := Pack(context.Background(), Config{
+		RootDir:      td,
+		OutputFormat: FormatMD,
+		Sections:     Sections{Files: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "````markdown\n```\ncode\n```\n````") {
+		t.Fatalf("inner fence was not escaped:\n%s", out)
+	}
+}
+
+func TestPack_Text(t *testing.T) {
+	td := t.TempDir()
+	mustWrite(t, filepath.Join(td, "top.txt"), []byte("hi\n"))
+
+	out, _, err := Pack(context.Background(), Config{
+		RootDir:      td,
+		OutputFormat: FormatTXT,
+		Sections:     Sections{Structure: true, Files: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{"Directory structure", "Files", "File: top.txt", "hi\n"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in:\n%s", want, s)
+		}
+	}
+}
+
+func TestPack_BadFormatFailsBeforeWalking(t *testing.T) {
+	// The format is validated first, so a bad flag costs nothing on a big repo.
+	_, _, err := Pack(context.Background(), Config{
+		RootDir:      "/nonexistent-directory-ctx3",
+		OutputFormat: OutputFormat("nope"),
+		Sections:     Sections{Files: true},
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported format") {
+		t.Fatalf("format should fail before the walk, got: %v", err)
 	}
 }
 

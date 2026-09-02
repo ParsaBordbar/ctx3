@@ -9,7 +9,12 @@ import (
 
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+	full := filepath.Join(dir, filepath.FromSlash(name))
+	// Nested paths ("store/store.go") need their parent created first.
+	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -65,15 +70,61 @@ func TestGenerate_CoreSections(t *testing.T) {
 	}
 	for _, want := range []string{
 		"# AGENTS.md",
-		"coolproj",           // project name from module path
+		"coolproj", // project name from module path
 		"## Commands",
 		"go test ./...",
 		"## Architecture",
-		"main.main",          // entry from call-graph
+		"main.main",                    // entry from call-graph
 		"CoolProj does a useful thing", // README blurb
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("generated doc missing %q", want)
 		}
+	}
+}
+
+// The Architecture section used to emit "TODO: describe responsibility" for
+// every package. These are facts ctx3 already computes, so they belong in the
+// scaffold rather than being left for a human to restate.
+func TestGenerate_ArchitectureCarriesRealFacts(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "go.mod", "module example.com/arch\n\ngo 1.22\n")
+	writeFile(t, dir, "main.go", "package main\n\nimport \"example.com/arch/store\"\n\nfunc main() { store.Open() }\n")
+	writeFile(t, dir, "store/store.go", "package store\n\n// Open opens it.\nfunc Open() {}\n")
+
+	doc, err := Generate(Config{RootDir: dir, Title: "AGENTS.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(doc, "TODO: describe responsibility") {
+		t.Error("per-package TODO placeholder should be gone")
+	}
+	if !strings.Contains(doc, "exported symbol(s)") {
+		t.Errorf("architecture should report exported surface:\n%s", doc)
+	}
+	if !strings.Contains(doc, "Imports `store`") {
+		t.Errorf("architecture should report internal imports:\n%s", doc)
+	}
+	// store imports nothing internal, so it reads in isolation.
+	if !strings.Contains(doc, "Self-contained") {
+		t.Errorf("architecture should name the leaf packages:\n%s", doc)
+	}
+}
+
+func TestGenerate_ArchitectureReportsImportCycles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "go.mod", "module example.com/cyc\n\ngo 1.22\n")
+	writeFile(t, dir, "main.go", "package main\n\nfunc main() {}\n")
+	writeFile(t, dir, "a/a.go", "package a\n\nimport _ \"example.com/cyc/b\"\n")
+	writeFile(t, dir, "b/b.go", "package b\n\nimport _ \"example.com/cyc/a\"\n")
+
+	doc, err := Generate(Config{RootDir: dir, Title: "AGENTS.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A cycle is the one architectural fact a reader cannot find in one file.
+	if !strings.Contains(doc, "Import cycles") {
+		t.Errorf("architecture should surface import cycles:\n%s", doc)
 	}
 }

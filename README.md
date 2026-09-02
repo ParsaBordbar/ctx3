@@ -34,10 +34,13 @@ ctx3 turns a repo into structured, LLM‑friendly facts — from a quick file tr
 | [`db`](#ctx3-db) | Detected databases + relational schema rebuilt from the repo |
 | [`deps`](#ctx3-deps) | Internal package dependency chain + circular‑import detection |
 | [`init`](#ctx3-init) | Deterministic `AGENTS.md` / `CLAUDE.md` scaffold for coding agents |
+| [`skills`](#emitting-skills) | The whole fact bundle as Claude Code skills (`--list` to audit scopes) |
+| [`add-skill`](#installing-your-own-skills) | Install a skill you wrote by hand into a scope |
+| [`mcp`](#ctx3-mcp) | Serve the analysis as live MCP tools over stdio |
 | [`update`](#updating) | Update ctx3 in place to the latest release |
 | `version` | Print the running version |
 
-Two of these — `deps` and (soon) DB analysis — can also emit their findings as a **[coding‑agent skill](#emitting-skills)** instead of raw text, so an agent loads the facts only when they're relevant.
+`context`, `map`, `deps`, `flow` and `db` can each emit their findings as a **[coding‑agent skill](#emitting-skills)** (`--skill`) instead of raw text, so an agent loads the facts only when a task matches them — or serve them **live over [MCP](#ctx3-mcp)**.
 
 ### Quick start
 
@@ -48,7 +51,12 @@ ctx3                         # interactive menu — ↑/↓/Tab to pick, Enter t
 ctx3 print .                 # see the tree
 ctx3 pack . -o pack.xml      # pack the repo for an LLM
 ctx3 init                    # scaffold an agent context file
+ctx3 skills .                # generate the agent skill bundle
 ```
+
+**[USAGE.md](USAGE.md) is the task-oriented guide** — pick the job (understand a
+repo, feed an LLM, set up an agent, guard CI), copy the command. `ctx3 help
+<command>` prints the full flag reference for any one command.
 
 Running `ctx3` with no arguments opens an interactive launcher (arrow keys or
 Tab to move, Enter to run, `q` to quit). In a pipe or with `--plain` it prints a
@@ -241,18 +249,12 @@ func Pack(ctx context.Context, cfg Config) ([]byte, Report, error) {
         }
 
         var buf bytes.Buffer
-        switch cfg.OutputFormat {
-        case FormatXML:
-                if cfg.Sections.Structure {
-                        renderXMLStructure(&buf, tree, cfg)
-                }
-                if cfg.Sections.Files {
-                        renderXMLFiles(&buf, files, cfg)
-                }
-        default:
-                return nil, rep, fmt.Errorf("unsupported format: %s (only xml is implemented)", cfg.OutputFormat)
+        if cfg.Sections.Structure {
+                structure(&buf, tree, cfg)
         }
-
+        if cfg.Sections.Files {
+                filesFn(&buf, files, cfg)
+        }
         return buf.Bytes(), rep, nil
 }
 </file>
@@ -263,12 +265,13 @@ Packed 2 files (0 skipped), 2019 bytes
 **Flags**
 
 * `-o, --output <path>`: write to a file instead of stdout
-* `-f, --format xml|md|txt` (default: `xml`) – *currently XML implemented*
+* `-f, --format xml|md|txt` (default: `xml`) – XML for models, Markdown for humans, plain text for anything that chokes on markup
 * `--respect-gitignore` (default: true)
 * `--include <glob>[,glob...]`: only include matches (takes precedence over ignores)
 * `--ignore <glob>[,glob...]`: exclude matches
 * `--max-file-bytes <n>`: skip any single file larger than `n`
 * `--max-total-bytes <n>`: stop packing once the total would exceed `n`
+* `--budget <tokens>`: the same limit expressed in tokens (`n = tokens × 4`) — see [Token accounting](#token-accounting)
 * `--binary skip|hex|base64` (default: `skip`): how to include binary files
 * `--sort paths|ext` (default: `paths`): deterministic ordering
 * `--section all|structure|files` (default: `all`) – choose which sections to output
@@ -343,9 +346,11 @@ ctx3 db . --skill                 # schema facts as a Claude Code skill
 
 ### `ctx3 map`
 
-Index **every top‑level symbol** in a Go tree — types, structs, interfaces, functions, methods, consts and vars — each with its signature and `file:line`.
+Index **every top‑level symbol** — types, structs, interfaces, classes, functions, methods, consts and vars — each with its signature and `file:line`.
 
-Syntax‑only (`go/parser`, no type‑check, no build), so it works on a partial checkout or code that doesn't currently compile. Exported symbols only by default.
+Syntax‑only (no type‑check, no build), so it works on a partial checkout or code that doesn't currently compile. Exported symbols only by default.
+
+**Languages:** Go, TypeScript/JavaScript, Python, Rust, Java and Ruby. Go is read by `go/parser`; the others are matched on declaration patterns, which keeps ctx3 dependency‑free and tolerant of broken files, at the cost of missing an unusually written declaration. Filter with `--lang`.
 
 This is the cheap alternative to reading files: an agent greps the map to find where something lives instead of opening a directory at a time.
 
@@ -355,9 +360,11 @@ This is the cheap alternative to reading files: an agent greps the map to find w
 * `--members`: show struct fields and interface methods
 * `-d, --docs`: show the first doc‑comment line under each symbol
 * `--kind <list>`: keep only some kinds — `func|method|struct|interface|type|const|var`
+* `--lang <list>`: keep only some languages — `go|java|python|ruby|rust|typescript`
 * `-m, --match <regexp>`: only symbols whose name matches
 * `--tests`: include `_test.go` files
 * `--no-recurse`: index only the given directory
+* `--budget <tokens>`: drop trailing symbols until the output fits — see [Token accounting](#token-accounting)
 * `-g, --grep`: one `file:line: signature` per symbol, for pipes and editors
 * `--md`, `-j, --json`, `-t, --toon`: Markdown tables / JSON / TOON
 * `-o, --output <path>`: write to a file instead of stdout
@@ -369,7 +376,34 @@ ctx3 map .                          # exported API of the whole repo
 ctx3 map . -a                       # include unexported
 ctx3 map ./db --members             # struct fields and interface methods
 ctx3 map . --kind struct,interface  # the data model only
+ctx3 map . --lang python,typescript # one language of a polyglot repo
 ctx3 map . -m 'Skill' -g            # grep-style, name filter
+```
+
+---
+
+### `ctx3 git`
+
+Report what the repository's **history** says about the code: current branch and HEAD, the uncommitted working set, recent commits, and the files that churn most.
+
+Every other command describes the code as it stands. This one answers "what is actually being worked on here" — the uncommitted list is the working set, the hot‑file list is where effort has been going. Shells out to `git`; no new dependency.
+
+**Flags**
+
+* `--commits <n>`: how many recent commits to list (default 15)
+* `--window <n>`: how many commits to measure churn over (default 200)
+* `--top <n>`: how many hot files to list (default 15)
+* `--md`, `-j, --json`, `-t, --toon`: Markdown tables / JSON / TOON
+* `-o, --output <path>`: write to a file instead of stdout
+* `--skill`, `--as`, `--force`, `--scope`: emit a skill — see [Emitting skills](#emitting-skills). This one goes stale fastest, so the generated `SKILL.md` says when it was taken and points at `scripts/refresh.sh`.
+
+**Examples**
+
+```bash
+ctx3 git .                        # state, log and hot files
+ctx3 git . --window 500 --top 25  # churn over more history
+ctx3 git . --md -o HISTORY.md
+ctx3 git . --skill                # history facts as a Claude Code skill
 ```
 
 ---
@@ -380,7 +414,7 @@ Walk the call graph **backwards** from a function: direct callers, transitive ca
 
 The symbol is matched as an exact `pkg.Func` / `pkg.Recv.Method` key first, then by bare function or method name, then as a substring — every match is reported, so an ambiguous name shows all candidates rather than guessing. A function with no callers is reported as such (dead code, or an externally invoked entry point).
 
-Uses the same type‑checked graph as [`flow`](#ctx3-flow), so it needs a buildable module.
+Go only. Uses the same graph as [`flow`](#ctx3-flow): type‑checked when the module compiles, parse‑only when it doesn't. On the degraded path a **"no callers" answer is unproven** — the output says so.
 
 **Flags**
 
@@ -402,6 +436,62 @@ ctx3 impact Scan --mermaid       # diagram of the blast radius
 
 ---
 
+### `ctx3 brief`
+
+Build the context for **one task** instead of the whole repo. Alias: `task`. The query is a symbol name (`Scan`, `Graph.Skill`) or a free‑text task (`"where do we validate skill names"`); every declaration is ranked against it, and each hit comes back with its **source**, what it **calls**, what **calls** it, the **entry points** it reaches, and its package's imports.
+
+Ranking is deterministic: exact name first, then name / doc / signature / path hits on the query's terms (CamelCase split, stop words dropped). The result is bounded by `--budget`: source snippets shrink first, then the lowest‑ranked hits drop, so the output always fits and the top match is never the part that goes. This is the bridge between `pack` (everything) and `impact` (one symbol).
+
+**Flags**
+
+* `-C, --dir <path>`: directory to analyze (default `.`)
+* `--budget <tokens>`: token budget for the output (default 4000, `0` = unlimited)
+* `--max <n>`: maximum symbols to include (default 8)
+* `--depth <n>`: caller levels to walk (default 3)
+* `--snippet <lines>`: maximum source lines per symbol (default 40)
+* `-j, --json` / `-t, --toon`: machine‑readable output
+* `-o, --output <path>`: write to a file instead of stdout
+
+**Examples**
+
+```bash
+ctx3 brief Scan                          # one symbol, everything around it
+ctx3 brief "validate skill names"        # a task, best-matching symbols
+ctx3 brief Write --budget 1500           # fit a small context window
+ctx3 brief Scan -t                       # TOON for an agent
+```
+
+---
+
+### `ctx3 diff-context`
+
+Context for a **change**, not a tree. Aliases: `changes`, `diff`. Diffs the working tree against a ref (default `HEAD`, so uncommitted and untracked work), maps every hunk onto the declaration it lands in, walks the call graph backwards from each changed function, and greps the test files that reference it. The output is what a review agent or a CI bot needs: which symbols moved, who depends on them, which entry points they reach, and which tests to run.
+
+**Flags**
+
+* `-C, --dir <path>`: directory to analyze (default `.`)
+* `--budget <tokens>`: token budget (`0` = unlimited) — callers trim first, then symbols, then the file list
+* `--depth <n>`: caller levels to walk (default 3)
+* `-j, --json` / `-t, --toon`: machine‑readable output
+* `-o, --output <path>`: write to a file instead of stdout
+
+**Examples**
+
+```bash
+ctx3 diff-context                  # uncommitted work vs HEAD
+ctx3 diff-context main             # this branch's work vs main
+ctx3 diff-context HEAD~3 --budget 2000
+ctx3 diff-context origin/main -t   # TOON for a review agent
+```
+
+---
+
+### Token accounting
+
+Every command prints a token estimate for what it just wrote on **stderr** (`≈ 1,234 tokens`, bytes ÷ 4, deterministic) so an agent can pick a view by cost. Silence it with the global `--no-tokens`. `pack`, `map`, `flow`, `brief` and `diff-context` take `--budget <tokens>` and trim to fit: `pack` stops adding files, `map` drops trailing symbols (JSON/TOON stay valid), `flow` truncates the rendering on a line boundary, and `brief` / `diff-context` trim structurally so the most important part survives.
+
+---
+
 ### `ctx3 flow`
 
 Analyze the **call graph** of a Go project — which function calls which — and render it as a text tree or a Mermaid flowchart.
@@ -414,6 +504,7 @@ Calls are resolved with **full type information** (`go/types` via `golang.org/x/
 * `-o, --output <path>`: write to a file instead of stdout
 * `--entry-only`: keep only functions reachable from an entry point (prunes unreferenced helpers)
 * `--depth <n>`: cap traversal depth in the text tree and Mermaid output (`0` = unlimited)
+* `--budget <tokens>`: truncate the rendering to fit — see [Token accounting](#token-accounting)
 * `--skill`, `--as`, `--force`: emit the call graph as a skill — see [Emitting skills](#emitting-skills)
 
 **Examples**
@@ -429,7 +520,9 @@ ctx3 flow . --skill                # call-graph facts as a Claude Code skill
 
 ### `ctx3 deps`
 
-Build the **internal package dependency chain** of a Go module: which packages import which, external deps split out, plus **circular‑import detection**.
+Build the **internal package dependency chain**: which packages import which, external deps split out, plus **circular‑import detection**.
+
+Covers **Go, TypeScript/JavaScript and Python** in a single graph — the unit is the directory, so a repo with a Go service and a TS frontend produces one picture rather than two. Go resolves through `go/parser` and the module path; the others resolve from source text, so a `tsconfig` path alias or a specifier built from a variable is dropped rather than guessed. Honors the root `.gitignore`, and no longer requires a `go.mod`.
 
 **Flags**
 
@@ -475,16 +568,44 @@ ctx3 init --stdout             # preview without writing
 
 ---
 
-### Emitting skills
+### `ctx3 mcp`
 
-Some ctx3 commands can package their findings as a **[Claude Code skill](https://docs.claude.com/en/docs/claude-code)** — a `SKILL.md` plus progressive‑disclosure `reference/` files — instead of dumping text. The point: a coding agent loads a `description`‑matched skill **only when the task needs it**, so heavy per‑domain facts don't bloat the always‑on context file.
+Serve ctx3's analysis over the **Model Context Protocol** so an agent can query it *live, mid‑task*, instead of reading a frozen skill snapshot. Speaks newline‑delimited JSON‑RPC 2.0 over stdin/stdout; it is launched by an MCP client, not run interactively.
 
-Both `deps --skill` (dependency chain) and `flow --skill` (call graph) emit skills:
+**Register with Claude Code**
 
 ```bash
-# Write .claude/skills/<name>/SKILL.md + reference files
+claude mcp add ctx3 -- ctx3 mcp
+```
+
+or in `.mcp.json`:
+
+```json
+{"mcpServers": {"ctx3": {"command": "ctx3", "args": ["mcp"]}}}
+```
+
+**Tools exposed** — all read‑only: `ctx3_context`, `ctx3_map`, `ctx3_functions`, `ctx3_deps`, `ctx3_flow`, `ctx3_impact`, `ctx3_db`, `ctx3_tree`, `ctx3_pack`, `ctx3_git`, `ctx3_brief`, `ctx3_diff_context`.
+
+Every result is **bounded**: a compact text rendering by default, truncated past `maxBytes`, so one query against a large repo returns something usable instead of flooding the agent's context.
+
+Skills and MCP are complementary — skills carry the facts that stay true all session, MCP answers the question that comes up mid‑task.
+
+---
+
+### Emitting skills
+
+Some ctx3 commands can package their findings as a **[Claude Code skill](https://docs.claude.com/en/docs/claude-code)** — a `SKILL.md` plus progressive‑disclosure bundle files — instead of dumping text. The point: a coding agent loads a `description`‑matched skill **only when the task needs it**, so heavy per‑domain facts don't bloat the always‑on context file.
+
+`context`, `map`, `deps`, `flow`, `db` and `git` all take `--skill`; `ctx3 skills` emits the whole bundle at once:
+
+```bash
+# Write .claude/skills/<name>/SKILL.md + bundle files
 ctx3 deps . --skill
 ctx3 flow . --skill
+ctx3 skills .                     # overview + symbols + deps + flow + db + git in one shot
+
+# Install into your home dir instead of the repo
+ctx3 deps . --skill --scope personal
 
 # Overwrite an existing skill dir
 ctx3 deps . --skill --force
@@ -496,21 +617,62 @@ ctx3 deps . --skill -o -
 **Flags** (on any skill‑capable command)
 
 * `--skill`: emit a skill instead of printing
+* `--scope <scope>`: where to install — `enterprise|personal|project` (default `project`), see [Skill scope and priority](#skill-scope-and-priority)
 * `--as <target>`: which tool convention to write for (default `claude`) — **only `claude` supports skills**
+* `--model <model>`: optional `model:` frontmatter (e.g. `opus`, `sonnet`, `haiku`)
+* `--allowed-tools <list>`: optional `allowed-tools:` frontmatter — an allowlist; omit for no restriction
 * `--force`: overwrite an existing skill directory
 * `-o -`: print the `SKILL.md` to stdout instead of writing files
 
-A generated skill looks like:
+A generated skill follows the open bundle layout — `references/` for docs, `scripts/` for executables (written with the exec bit, and described in `SKILL.md` as *run, do not read*, so only their output costs tokens), `assets/` for templates and fixtures:
 
 ```
 .claude/skills/ctx3-deps/
 ├── SKILL.md                    # name + description (the trigger) + a short overview
-└── reference/
-    ├── dependencies.md         # facts, loaded on demand
-    └── dependencies.mermaid.md # diagram, loaded on demand
+├── references/
+│   ├── dependencies.md         # facts, loaded on demand
+│   └── dependencies.mermaid.md # diagram, loaded on demand
+└── scripts/
+    └── refresh.sh              # re-derives the facts — run it, never read it
 ```
 
-Under the hood this is the reusable **`skillwriter`** package (`skillwriter.Write` / `Validate`), so new fact‑emitting commands get consistent, validated skill output for free — see [Using ctx3 as a library](#using-ctx3-as-a-library).
+Every generated skill ships `scripts/refresh.sh`, which re‑runs the exact command (directory, scope, `--model`, `--allowed-tools`) that produced it. Generated facts go stale as the code changes; the agent fixes that by running one script whose contents never enter the context window — only ctx3's one‑line summary does. Regenerating with `--force` also prunes `references/`, `scripts/` and `assets/` first, so a file from an older generation can't keep serving facts that no longer hold.
+
+`SKILL.md` stays a table of contents, not the document: ctx3 warns when a generated one crosses **500 lines**, which is the signal to push detail down into `references/`.
+
+Under the hood this is the reusable **`skillwriter`** package (`skillwriter.Write` / `Validate` / `Lint`), so new fact‑emitting commands get consistent, validated skill output for free — see [Using ctx3 as a library](#using-ctx3-as-a-library).
+
+---
+
+### Installing your own skills
+
+Write a skill by hand, then install it where an agent will find it:
+
+```bash
+ctx3 add-skill ./my-skill --scope personal   # available in every repo
+ctx3 add-skill ./my-skill --scope project    # commit it with the code
+ctx3 add-skill ./my-skill/SKILL.md           # the SKILL.md path works too
+ctx3 add-skill ./review --name backend-review  # install under a different name
+ctx3 add-skill ./my-skill --dry-run          # validate + show where it lands
+ctx3 skills --list                           # every installed skill, per scope
+```
+
+The whole bundle is copied (`SKILL.md`, `references/`, `scripts/`, `assets/`, exec bits preserved) after validating the two things that decide whether the skill is usable at all: a **kebab-case name** and a **non-empty description** — the description is the only text the agent matches a task against. Restart Claude Code after installing, updating (edit `SKILL.md`) or removing (delete the directory) a skill.
+
+### Skill scope and priority
+
+The same skill name can exist in several places. Highest priority wins, and the lower copies never load:
+
+| Priority | Scope | Location | Writable |
+|---|---|---|---|
+| 1 | `enterprise` | managed settings dir (`/Library/Application Support/ClaudeCode/skills`, `/etc/claude-code/skills`, `%PROGRAMDATA%\ClaudeCode\skills`) | yes (needs admin rights) |
+| 2 | `personal` | `~/.claude/skills` | yes |
+| 3 | `project` | `<repo>/.claude/skills` | yes |
+| 4 | `plugin` | `~/.claude/plugins/**/skills` | no — owned by the plugin |
+
+So an enterprise `code-review` beats your personal `code-review`, which beats the repo's. That's how an organization enforces a standard while individuals still customize. Plugin skills are namespaced `plugin:skill`, so they never collide.
+
+`add-skill` and every `--skill` emitter check the other scopes and warn when the copy they just wrote is shadowed; `ctx3 skills --list` marks shadowed copies with `⊘`. The fix is a descriptive name — `backend-review`, not `review` — either in the frontmatter or via `--name` at install time.
 
 ---
 
@@ -598,8 +760,15 @@ Besides being a CLI tool, ctx3 can be imported directly into your Go projects �
 | `flow` | `flow` | Build a Go call graph |
 | `deps` | `deps` | Internal dependency chain + cycle detection |
 | `agentmd` | `init` | Compose an agent context file |
-| `skillwriter` | `--skill` | Materialize a Claude Code skill from derived facts |
-| `target` | `--as` | Resolve a tool selector to its files/skill dir |
+| `symbols` | `map` | Flat symbol index with `file:line` |
+| `funcs` | `functions` | Function signatures, parse‑only |
+| `db` | `db` | Detected datastores + reconstructed schema |
+| `gitfacts` | `git` | Branch, working set, commits, churn |
+| `brief` | `brief` | Task‑scoped context pack under a token budget |
+| `diffctx` | `diff-context` | Changed symbols, callers, tests to run |
+| `mcp` | `mcp` | Serve the analysis over JSON‑RPC 2.0 on stdio |
+| `skillwriter` | `--skill` | Materialize, load and install Claude Code skills |
+| `target` | `--as`, `--scope` | Resolve a tool selector / skill scope to its dirs |
 
 ```go
 import (
@@ -611,14 +780,11 @@ import (
 
 ## Roadmap
 
-**Done:** call graph (`flow`) · dependency chain (`deps`) · agent context files (`init`) · skill emission (`skillwriter`)
+**Done:** call graph (`flow`, package map `-p`) · reverse call graph (`impact`) · polyglot dependency chain (`deps`) · multi‑language symbol index (`map`) · database + schema analysis (`db`) · repository history (`git`) · task briefs (`brief`) · change context (`diff-context`) · token budgets (`--budget`) · agent context files (`init`) · skill emission and installation (`skills`, `add-skill`, `skillwriter`) · MCP server (`mcp`) · `pack` in XML / Markdown / plain text
 
 **Next:**
 
-- Markdown / TXT renderers for `pack`
 - YAML output
-- Database type + relation analysis (emitted as a skill)
-- Datagrams / ER diagrams
 - Gist — code‑snippet extraction
 - Prompt generation
 

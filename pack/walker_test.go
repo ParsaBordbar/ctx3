@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeFile(t *testing.T, path string, data []byte) {
@@ -241,4 +243,29 @@ func isBase64String(s string) bool {
 		}
 	}
 	return n%4 == 0
+}
+
+func TestWalk_CancelledContextReturns(t *testing.T) {
+	td := t.TempDir()
+	for i := range 50 {
+		writeFile(t, filepath.Join(td, "f"+strconv.Itoa(i)+".go"), []byte("package main\n"))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // every worker sees a dead context before its first read
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, _, err := WalkAndCollect(ctx, Config{RootDir: td})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("want the cancellation error back")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("WalkAndCollect hung on a cancelled context")
+	}
 }

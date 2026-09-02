@@ -1,15 +1,10 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/parsabordbar/ctx3/deps"
-	"github.com/parsabordbar/ctx3/skillwriter"
-	"github.com/parsabordbar/ctx3/target"
-	toon "github.com/toon-format/toon-go"
 
 	"github.com/spf13/cobra"
 )
@@ -21,15 +16,12 @@ var (
 	depsOutputPath string
 	depsCyclesOnly bool
 	depsQuiet      bool
-	depsSkill      bool
-	depsAs         string
-	depsForce      bool
 )
 
 var depsCmd = &cobra.Command{
 	Use:   "deps [directory]",
-	Short: "Analyze the internal dependency chain of a Go module",
-	Long: `Build the internal package dependency chain of a Go module: which packages
+	Short: "Analyze the internal dependency chain of a project",
+	Long: `Build the internal package dependency chain of a project: which packages
 import which, split from external dependencies, with circular-import detection.
 
 Output formats:
@@ -48,18 +40,15 @@ Examples:
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dir := "."
-		if len(args) > 0 {
-			dir = args[0]
-		}
+		dir := dirArg(args)
 
 		graph, err := deps.Analyze(deps.Config{RootDir: dir})
 		if err != nil {
 			return err
 		}
 
-		if depsSkill {
-			return emitDepsSkill(graph)
+		if skillEmit {
+			return emitSkill("deps", graph.Skill(), dir, depsOutputPath)
 		}
 
 		if depsCyclesOnly {
@@ -81,65 +70,18 @@ Examples:
 
 		var output string
 		switch {
-		case depsJSON:
-			b, err := json.MarshalIndent(graph, "", "  ")
+		case depsJSON, depsTOON:
+			output, err = encodeStructured(graph, depsTOON)
 			if err != nil {
 				return err
 			}
-			output = string(b)
-		case depsTOON:
-			b, err := toon.Marshal(graph)
-			if err != nil {
-				return err
-			}
-			output = string(b)
 		case depsMermaid:
 			output = deps.RenderMermaid(graph)
 		default:
 			output = deps.RenderText(graph)
 		}
-
-		if depsOutputPath != "" {
-			if err := os.WriteFile(depsOutputPath, []byte(output), 0o644); err != nil {
-				return fmt.Errorf("writing output: %w", err)
-			}
-			fmt.Fprintf(os.Stderr, "Dependency chain written to %s\n", depsOutputPath)
-			return nil
-		}
-		fmt.Println(output)
-		return nil
+		return writeOut(output, depsOutputPath, "Dependency chain")
 	},
-}
-
-// emitDepsSkill writes the dependency-chain skill for the selected target,
-// or prints SKILL.md to stdout when --output - is used.
-func emitDepsSkill(graph *deps.Graph) error {
-	sel := depsAs
-	if sel == "" {
-		sel = "claude" // skills are a Claude Code convention
-	}
-	tgt, ok := target.Get(sel)
-	if !ok {
-		return fmt.Errorf("unknown --as value %q (want: %v)", depsAs, target.Names())
-	}
-	if !tgt.SupportsSkills() {
-		return fmt.Errorf("target %q does not support skills (skills are a %s convention)", sel, "Claude Code")
-	}
-
-	skill := graph.Skill()
-
-	if depsOutputPath == "-" {
-		fmt.Print(skillwriter.RenderSkillMD(skill))
-		return nil
-	}
-
-	dir, files, err := skillwriter.Write(skillwriter.Config{SkillsDir: tgt.SkillDir, Force: depsForce}, skill)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "✓ Wrote skill %q (%d files) to %s\n", skill.Name, len(files), dir)
-	fmt.Fprintf(os.Stderr, "  %s will load it when a task matches its description. Re-run with --force to refresh.\n", tgt.Name)
-	return nil
 }
 
 func init() {
@@ -149,8 +91,6 @@ func init() {
 	depsCmd.Flags().StringVarP(&depsOutputPath, "output", "o", "", "Write output to file (default: stdout)")
 	depsCmd.Flags().BoolVar(&depsCyclesOnly, "cycles-only", false, "Only report circular imports (non-zero exit if any)")
 	depsCmd.Flags().BoolVar(&depsQuiet, "quiet", false, "With --cycles-only: suppress the success line (print only on failure)")
-	depsCmd.Flags().BoolVar(&depsSkill, "skill", false, "Emit a coding-agent skill (SKILL.md + reference files) instead of printing; use -o - to preview")
-	depsCmd.Flags().StringVar(&depsAs, "as", "", "target tool for --skill (default: claude)")
-	depsCmd.Flags().BoolVar(&depsForce, "force", false, "Overwrite an existing skill directory")
+	bindSkillEmitFlags(depsCmd.Flags())
 	rootCmd.AddCommand(depsCmd)
 }

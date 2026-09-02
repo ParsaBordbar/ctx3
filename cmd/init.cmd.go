@@ -39,10 +39,7 @@ Examples:
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true, // runtime errors shouldn't dump the flag list
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dir := "."
-		if len(args) > 0 {
-			dir = args[0]
-		}
+		dir := dirArg(args)
 		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 			return fmt.Errorf("%s is not a directory", dir)
 		}

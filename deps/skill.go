@@ -23,7 +23,7 @@ func (g *Graph) Skill() skillwriter.Skill {
 	base := moduleBase(g.Module)
 
 	desc := fmt.Sprintf(
-		"Internal Go dependency chain of the %s module: which packages import which, "+
+		"Internal dependency chain of the %s project: which packages import which, "+
 			"their external dependencies, and any circular imports. Use when asked about "+
 			"dependencies, what imports or depends on a package, coupling between packages, "+
 			"import cycles, or safe refactor/extraction order.",

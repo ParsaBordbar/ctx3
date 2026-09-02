@@ -25,6 +25,11 @@ type Impact struct {
 	Packages []string `json:"packages" toon:"packages"`
 	Entries  []string `json:"entries"  toon:"entries"`
 	MaxDepth int      `json:"maxDepth" toon:"maxDepth"`
+	// Degraded and Notes carry the parse-only caveat up from the call graph.
+	// It matters more here than anywhere else: "no callers" is the answer a
+	// reader acts on, and a name-resolved graph can miss a caller.
+	Degraded bool     `json:"degraded" toon:"degraded"`
+	Notes    []string `json:"notes,omitempty" toon:"notes,omitempty"`
 
 	graph *CallGraph
 }
@@ -84,7 +89,10 @@ func Impacted(g *CallGraph, query string, maxDepth int) (*Impact, error) {
 	}
 
 	rev := g.Reverse()
-	imp := &Impact{Query: query, Targets: targets, MaxDepth: maxDepth, graph: g}
+	imp := &Impact{
+		Query: query, Targets: targets, MaxDepth: maxDepth, graph: g,
+		Degraded: g.Degraded, Notes: g.Notes,
+	}
 
 	seen := map[string]bool{}
 	for _, t := range targets {
@@ -147,13 +155,19 @@ func RenderImpactText(imp *Impact) string {
 	rev := g.Reverse()
 
 	var sb strings.Builder
+	sb.WriteString(degradedBanner(g, "  "))
 	fmt.Fprintf(&sb, "┌── Impact of %q\n", imp.Query)
+
+	noCallers := "  └── no callers in this module\n"
+	if imp.Degraded {
+		noCallers = "  └── no callers found — but this graph is parse-only, so treat that as unproven\n"
+	}
 
 	for _, t := range imp.Targets {
 		node := g.Nodes[t]
 		fmt.Fprintf(&sb, "\n%s  (%s:%d)\n", t, node.File, node.Line)
 		if len(rev[t]) == 0 {
-			sb.WriteString("  └── no callers in this module\n")
+			sb.WriteString(noCallers)
 			continue
 		}
 		visited := map[string]bool{t: true}

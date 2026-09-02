@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	ignore "github.com/sabhiram/go-gitignore"
 )
 
 // Kind classifies a declaration.
@@ -49,6 +51,7 @@ type Symbol struct {
 	Signature string   `json:"signature"            toon:"signature"`
 	Doc       string   `json:"doc,omitempty"        toon:"doc,omitempty"`
 	Members   []Member `json:"members,omitempty"    toon:"members,omitempty"`
+	Lang      string   `json:"lang"                 toon:"lang"`
 	Package   string   `json:"package"              toon:"package"`
 	Dir       string   `json:"dir"                  toon:"dir"`
 	File      string   `json:"file"                 toon:"file"`
@@ -78,10 +81,18 @@ type Config struct {
 	Kinds []Kind
 	// Match, when non-nil, keeps only symbols whose name matches.
 	Match *regexp.Regexp
+	// Langs, when non-empty, keeps only these languages ("go", "python", …).
+	Langs []string
 }
 
+// skipDirs are never indexed. Build-output names like dist/, build/ and
+// target/ are deliberately absent: they are also perfectly ordinary package
+// names (ctx3 has its own target/), and silently dropping real symbols is a
+// worse failure than indexing a generated copy. Generated *files* are filtered
+// instead, by name and size, in lang.go.
 var skipDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true, "testdata": true,
+	"__pycache__": true,
 }
 
 // Scan indexes every declaration under cfg.Path.
@@ -99,17 +110,32 @@ func Scan(cfg Config) (*Index, error) {
 	for _, k := range cfg.Kinds {
 		keep[k] = true
 	}
+	keepLang := map[string]bool{}
+	for _, l := range cfg.Langs {
+		keepLang[strings.ToLower(strings.TrimSpace(l))] = true
+	}
 
 	idx := &Index{Root: root}
 	fset := token.NewFileSet()
 	for _, path := range files {
-		syms, err := parseFile(fset, path, cfg)
+		var (
+			syms []Symbol
+			err  error
+		)
+		if spec := langByExt[strings.ToLower(filepath.Ext(path))]; spec != nil {
+			syms, err = scanLangFile(path, spec, cfg)
+		} else {
+			syms, err = parseFile(fset, path, cfg)
+		}
 		if err != nil {
 			// A file that doesn't parse shouldn't sink the whole scan.
 			continue
 		}
 		for _, s := range syms {
 			if len(keep) > 0 && !keep[s.Kind] {
+				continue
+			}
+			if len(keepLang) > 0 && !keepLang[s.Lang] {
 				continue
 			}
 			idx.Symbols = append(idx.Symbols, s)
@@ -154,6 +180,25 @@ func collectFiles(root string, recursive bool) ([]string, error) {
 		return []string{root}, nil
 	}
 
+	// The repo already declares what is not source. Honoring .gitignore is what
+	// keeps build output — dist/, build/, a compiled bundle — out of the index
+	// without hard-coding directory names that are also ordinary package names.
+	gitIg := loadGitignore(root)
+	ignored := func(path string, isDir bool) bool {
+		if gitIg == nil {
+			return false
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return false
+		}
+		rel = filepath.ToSlash(rel)
+		if isDir {
+			rel += "/"
+		}
+		return gitIg.MatchesPath(rel)
+	}
+
 	var out []string
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -163,7 +208,7 @@ func collectFiles(root string, recursive bool) ([]string, error) {
 			if path == root {
 				return nil
 			}
-			if skipDirs[d.Name()] || strings.HasPrefix(d.Name(), ".") {
+			if skipDirs[d.Name()] || strings.HasPrefix(d.Name(), ".") || ignored(path, true) {
 				return filepath.SkipDir
 			}
 			if !recursive {
@@ -171,7 +216,7 @@ func collectFiles(root string, recursive bool) ([]string, error) {
 			}
 			return nil
 		}
-		if strings.HasSuffix(path, ".go") {
+		if isIndexable(path) && !ignored(path, false) {
 			out = append(out, path)
 		}
 		return nil
@@ -181,6 +226,21 @@ func collectFiles(root string, recursive bool) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// loadGitignore compiles the root .gitignore, or nil when there is none.
+func loadGitignore(root string) *ignore.GitIgnore {
+	gi, err := ignore.CompileIgnoreFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		return nil
+	}
+	return gi
+}
+
+// isIndexable reports whether a path is a source file the scanner understands.
+func isIndexable(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".go" || langByExt[ext] != nil
 }
 
 func parseFile(fset *token.FileSet, path string, cfg Config) ([]Symbol, error) {
@@ -194,7 +254,7 @@ func parseFile(fset *token.FileSet, path string, cfg Config) ([]Symbol, error) {
 
 	rel := filepath.ToSlash(path)
 	dir := filepath.ToSlash(filepath.Dir(path))
-	base := Symbol{Package: file.Name.Name, Dir: dir, File: rel}
+	base := Symbol{Package: file.Name.Name, Lang: "go", Dir: dir, File: rel}
 
 	var out []Symbol
 	add := func(s Symbol, name *ast.Ident, pos token.Pos) {

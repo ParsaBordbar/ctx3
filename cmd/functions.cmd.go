@@ -1,13 +1,10 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"regexp"
 
 	"github.com/parsabordbar/ctx3/funcs"
-	toon "github.com/toon-format/toon-go"
 
 	"github.com/spf13/cobra"
 )
@@ -33,6 +30,9 @@ var functionsCmd = &cobra.Command{
 	Long: `List every function and method declared in a Go file or directory, with its
 receiver, arguments and return types.
 
+Go only — the parameter and result breakdown needs a real parser. For the
+one-line-per-symbol index across other languages, use "ctx3 map --lang".
+
 Syntax-only: no build, no type-check, so it works on a single file, a partial
 checkout, or code that doesn't currently compile.
 
@@ -51,10 +51,7 @@ Examples:
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		path := "."
-		if len(args) > 0 {
-			path = args[0]
-		}
+		path := dirArg(args)
 
 		cfg := funcs.Config{
 			Path:         path,
@@ -78,18 +75,11 @@ Examples:
 
 		var output string
 		switch {
-		case funcsJSON:
-			b, err := json.MarshalIndent(res, "", "  ")
+		case funcsJSON, funcsTOON:
+			output, err = encodeStructured(res, funcsTOON)
 			if err != nil {
 				return err
 			}
-			output = string(b)
-		case funcsTOON:
-			b, err := toon.Marshal(res)
-			if err != nil {
-				return err
-			}
-			output = string(b)
 		case funcsMarkdown:
 			output = funcs.RenderMarkdown(res)
 		case funcsGrep:
@@ -98,15 +88,7 @@ Examples:
 			output = funcs.RenderText(res, funcsDocs)
 		}
 
-		if funcsOutput != "" && funcsOutput != "-" {
-			if err := os.WriteFile(funcsOutput, []byte(output), 0o644); err != nil {
-				return fmt.Errorf("writing output: %w", err)
-			}
-			fmt.Fprintf(os.Stderr, "Function list written to %s\n", funcsOutput)
-			return nil
-		}
-		fmt.Println(output)
-		return nil
+		return writeOut(output, funcsOutput, "Function list")
 	},
 }
 

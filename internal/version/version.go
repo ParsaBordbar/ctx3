@@ -6,7 +6,6 @@ var version string
 
 const Module = "github.com/parsabordbar/ctx3"
 
-
 func Version() string {
 	if version != "" {
 		return version

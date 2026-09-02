@@ -44,8 +44,15 @@ func TestCallGraph_Skill(t *testing.T) {
 	if !strings.Contains(s.Description, "call") && !strings.Contains(s.Description, "Call") {
 		t.Errorf("description missing trigger keywords: %q", s.Description)
 	}
-	if len(s.References) != 2 {
-		t.Fatalf("want 2 references, got %d", len(s.References))
+	// Package map first (cheapest, most orienting), then the tree, then Mermaid.
+	wantRefs := []string{"packages.md", "callgraph.md", "callgraph.mermaid.md"}
+	if len(s.References) != len(wantRefs) {
+		t.Fatalf("want %d references, got %d", len(wantRefs), len(s.References))
+	}
+	for i, want := range wantRefs {
+		if s.References[i].Filename != want {
+			t.Errorf("reference %d = %q, want %q", i, s.References[i].Filename, want)
+		}
 	}
 	// Skills must be fact-only.
 	if strings.Contains(s.Overview, "TODO") {

@@ -48,7 +48,7 @@ func TestRenderSkillMD(t *testing.T) {
 		"---\nname: proj-deps\n",
 		"description: Dependency chain facts.",
 		"## Reference files",
-		"`reference/dependencies.md` — you need the full graph",
+		"`references/dependencies.md` — you need the full graph",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("SKILL.md missing %q\n---\n%s", want, md)
@@ -74,7 +74,7 @@ func TestWrite_MaterializesTree(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(got, "SKILL.md")); err != nil {
 		t.Errorf("SKILL.md not written: %v", err)
 	}
-	ref, err := os.ReadFile(filepath.Join(got, "reference", "dependencies.md"))
+	ref, err := os.ReadFile(filepath.Join(got, ReferencesDir, "dependencies.md"))
 	if err != nil || string(ref) != "GRAPH" {
 		t.Errorf("reference content wrong: %q err=%v", ref, err)
 	}
@@ -90,6 +90,36 @@ func TestWrite_GuardAndForce(t *testing.T) {
 	}
 	if _, _, err := Write(Config{SkillsDir: skillsDir, Force: true}, sampleSkill()); err != nil {
 		t.Fatalf("--force should overwrite: %v", err)
+	}
+}
+
+func TestWrite_ForcePrunesStaleBundleFiles(t *testing.T) {
+	skillsDir := filepath.Join(t.TempDir(), "skills")
+	dir, _, err := Write(Config{SkillsDir: skillsDir}, sampleSkill())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A previous generation's files: a renamed dir and a reference that is no
+	// longer emitted. Both would keep serving facts that no longer hold.
+	legacy := filepath.Join(dir, "reference")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(legacy, "dependencies.md"), []byte("OLD"), 0o644)
+	os.WriteFile(filepath.Join(dir, ReferencesDir, "gone.md"), []byte("OLD"), 0o644)
+
+	if _, _, err := Write(Config{SkillsDir: skillsDir, Force: true}, sampleSkill()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Errorf("legacy reference/ dir survived --force: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ReferencesDir, "gone.md")); !os.IsNotExist(err) {
+		t.Errorf("stale reference survived --force: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ReferencesDir, "dependencies.md")); err != nil {
+		t.Errorf("current reference missing after --force: %v", err)
 	}
 }
 

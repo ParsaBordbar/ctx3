@@ -20,25 +20,31 @@ type Config struct {
 
 // FuncNode represents a function and the functions it calls.
 type FuncNode struct {
-	Package  string
-	Name     string
-	File     string
-	Line     int
-	Calls    []string
-	IsEntry  bool
-	IsExport bool
+	Package  string   `json:"package" toon:"package"`
+	Name     string   `json:"name" toon:"name"`
+	File     string   `json:"file" toon:"file"`
+	Line     int      `json:"line" toon:"line"`
+	Calls    []string `json:"calls" toon:"calls"`
+	IsEntry  bool     `json:"isEntry" toon:"is_entry"`
+	IsExport bool     `json:"isExport" toon:"is_export"`
 }
 
 // CallGraph holds all discovered functions and their call edges.
 type CallGraph struct {
 	// Nodes keyed by "package.FuncName" (methods: "package.Recv.Method")
-	Nodes map[string]*FuncNode
+	Nodes map[string]*FuncNode `json:"nodes" toon:"nodes"`
 	// Entry points (nodes in entry files)
-	Entries []string
+	Entries []string `json:"entries" toon:"entries"`
 	// Package list
-	Packages []string
+	Packages []string `json:"packages" toon:"packages"`
 	// MaxDepth caps how deep renderers traverse (0 = unlimited).
-	MaxDepth int
+	MaxDepth int `json:"maxDepth" toon:"max_depth"`
+	// Degraded reports that the graph was built from syntax alone because the
+	// tree does not type-check. Edges are then resolved by name, so a method
+	// called on a value is only linked when one type in the module declares it.
+	Degraded bool `json:"degraded" toon:"degraded"`
+	// Notes explain why the analysis degraded, for the caller to surface.
+	Notes []string `json:"notes,omitempty" toon:"notes,omitempty"`
 }
 
 // packagesLoadMode carries syntax + full type info + deps for call resolution.
@@ -65,7 +71,19 @@ func AnalyzeFlow(cfg Config) (*CallGraph, error) {
 		Tests: false,
 	}, "./...")
 	if err != nil {
-		return nil, fmt.Errorf("loading packages: %w", err)
+		// The tree could not be loaded at all — syntax alone is all that is left.
+		return analyzeParseOnly(absRoot, cfg, []string{
+			fmt.Sprintf("go/packages could not load the tree (%v); fell back to parse-only analysis", err),
+		})
+	}
+
+	// Type information is all-or-nothing for call resolution: a package that
+	// failed to type-check yields no edges at all, which reads as "this code
+	// calls nothing" rather than "this could not be analyzed". Silently mixing
+	// the two would be worse than degrading the whole graph, so any error sends
+	// the entire analysis down the parse-only path.
+	if notes := loadNotes(pkgs); len(notes) > 0 {
+		return analyzeParseOnly(absRoot, cfg, notes)
 	}
 
 	// In-module package paths — edges to anything else (stdlib, deps) are dropped.
@@ -85,6 +103,14 @@ func AnalyzeFlow(cfg Config) (*CallGraph, error) {
 
 	rebuildPackages(graph, pkgSet)
 	collectEntries(graph)
+
+	// A clean load that produced nothing means the type-checked path found no
+	// declarations it could key; syntax will at least find the functions.
+	if len(graph.Nodes) == 0 {
+		return analyzeParseOnly(absRoot, cfg, []string{
+			"type-checking produced no call graph; fell back to parse-only analysis",
+		})
+	}
 
 	// --entry-only: drop nodes unreachable from an entry point.
 	if cfg.EntryOnly && len(graph.Entries) > 0 {
@@ -359,12 +385,32 @@ func unique(ss []string) []string {
 	return out
 }
 
+// degradedBanner warns that the graph came from the parse-only path. A caller
+// that cannot tell a name-resolved edge from a type-checked one would read a
+// missing method call as "nothing calls this", so the caveat leads the output
+// rather than trailing it.
+func degradedBanner(g *CallGraph, indent string) string {
+	if g == nil || !g.Degraded {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(indent + "⚠ parse-only analysis — this tree does not type-check.\n")
+	sb.WriteString(indent + "  Calls are resolved by name: a method called on a value is linked\n")
+	sb.WriteString(indent + "  only when one type in the module declares it, so some edges are missing.\n")
+	for _, n := range g.Notes {
+		fmt.Fprintf(&sb, "%s  · %s\n", indent, n)
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
 // ─── Text renderer ───────────────────────────────────────────────────────────
 
 // RenderText produces a human-readable call-tree. Starts from entry points
 // (or all exported functions if no entries are found). Honors g.MaxDepth.
 func RenderText(g *CallGraph) string {
 	var sb strings.Builder
+	sb.WriteString(degradedBanner(g, "  "))
 	sb.WriteString("┌── Code Flow\n")
 
 	roots := rootKeys(g)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
 	"github.com/parsabordbar/ctx3/analyzer"
 	"github.com/toon-format/toon-go"
 
@@ -18,39 +19,64 @@ var contextCmd = &cobra.Command{
 Output formats:
   - Default: Human-readable text format
   - JSON (-j): Machine-readable JSON format
-  - TOON (-t): Token-Oriented Object Notation (compact, LLM-optimized)`,
-	Args:  cobra.MaximumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		dir := "."
-		if len(args) > 0 {
-			dir = args[0]
-		}
+  - TOON (-t): Token-Oriented Object Notation (compact, LLM-optimized)
+
+Examples:
+  ctx3 context .
+  ctx3 context . --skill               # write a Claude Code overview skill`,
+	Args:         cobra.MaximumNArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		dir := dirArg(args)
 
 		ctx := analyzer.AnalyzeProject(dir)
 
-		// Handle different output formats
-		if analyzer.OutputTOON {
-			// Output as TOON format
-			encoded, err := toon.Marshal(ctx, toon.WithLengthMarkers(true))
+		if skillEmit {
+			return emitSkill("context", ctx.Skill(projectBaseName(dir)), dir, "")
+		}
+
+		// The per-file list dominates the structured payload — name, type, path,
+		// size, line count and mtime for every file in the repo — and is rarely
+		// what the caller wants from an overview, so it is opt-in. The MCP tool
+		// has always trimmed it; the CLI used to dump it.
+		encodable := ctx
+		if !contextFiles {
+			encodable.Files = nil
+		}
+
+		switch {
+		case analyzer.OutputTOON:
+			encoded, err := toon.Marshal(encodable, toon.WithLengthMarkers(true))
 			if err != nil {
-				fmt.Printf("Error encoding TOON: %v\n", err)
-				return
+				return fmt.Errorf("encoding TOON: %w", err)
 			}
 			fmt.Println(string(encoded))
-		} else if analyzer.OutputJSON {
-			// Output as JSON
-			data, _ := json.MarshalIndent(ctx, "", "  ")
+		case analyzer.OutputJSON:
+			data, _ := json.MarshalIndent(encodable, "", "  ")
 			fmt.Println(string(data))
-		} else {
-			// Output as human-readable format
+		default:
 			fmt.Printf("📂 Project: %s\n", ctx.Root)
 			fmt.Printf("Files: %d, Dirs: %d\n", ctx.TotalFiles, ctx.TotalDirs)
 			if len(ctx.Dependencies) > 0 {
-				fmt.Println("Dependencies:", strings.Join(ctx.Dependencies, ", "))
+				fmt.Printf("Dependencies (%d direct", len(ctx.Dependencies))
+				if ctx.IndirectCount > 0 {
+					fmt.Printf(", %d indirect", ctx.IndirectCount)
+				}
+				fmt.Println("):", strings.Join(ctx.Dependencies, ", "))
 			}
 			if ctx.Readme != "" {
-				fmt.Println("\nREADME Preview:\n", ctx.Readme)
+				fmt.Printf("\nREADME preview:\n%s\n", ctx.Readme)
 			}
 		}
+		return nil
 	},
+}
+
+// contextFiles opts into the per-file listing in JSON/TOON output.
+var contextFiles bool
+
+func init() {
+	contextCmd.Flags().BoolVar(&contextFiles, "files", false,
+		"Include the per-file listing in JSON/TOON output (large on big repos)")
+	bindSkillEmitFlags(contextCmd.Flags())
 }

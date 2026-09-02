@@ -38,7 +38,8 @@ func RenderText(idx *Index, docs bool) string {
 		sb.WriteByte('\n')
 	}
 
-	fmt.Fprintf(&sb, "%d symbols across %d packages\n", len(idx.Symbols), len(byDir))
+	fmt.Fprintf(&sb, "%d symbols across %d packages (%s)\n",
+		len(idx.Symbols), len(byDir), strings.Join(Counts(idx), ", "))
 	return strings.TrimRight(sb.String(), "\n") + "\n"
 }
 

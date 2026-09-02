@@ -25,6 +25,7 @@ var (
 	packRedact        []string
 	packConcurrency   int
 	packCompact       bool // NEW
+	packBudget        int
 )
 
 var packCmd = &cobra.Command{
@@ -46,12 +47,10 @@ var packCmd = &cobra.Command{
 			return err
 		}
 
-		if cfg.OutputPath != "" {
-			if err := os.WriteFile(cfg.OutputPath, out, 0o644); err != nil {
-				return err
-			}
-		} else {
-			fmt.Print(string(out))
+		// writeOut, not os.WriteFile: it is what makes "-o -" mean stdout
+		// instead of creating a file literally named "-".
+		if err := writeOut(string(out), cfg.OutputPath, "Packed repo"); err != nil {
+			return err
 		}
 
 		fmt.Fprintf(os.Stderr, "Packed %d files (%d skipped), %d bytes\n",
@@ -79,6 +78,7 @@ func init() {
 	packCmd.Flags().StringSliceVar(&packRedact, "redact", nil, "Comma-separated regex patterns to redact from file contents")
 	packCmd.Flags().IntVar(&packConcurrency, "concurrency", 0, "Number of concurrent file reads (0 = auto)")
 	packCmd.Flags().BoolVar(&packCompact, "compact", false, "Remove extra blank lines between sections and files") // NEW
+	packCmd.Flags().IntVar(&packBudget, "budget", 0, "Token budget: stop packing once content would exceed it (0 = unlimited)")
 
 	rootCmd.AddCommand(packCmd)
 }
@@ -124,6 +124,11 @@ func collectPackConfigFromFlags(root string) (pack.Config, error) {
 	cfg.IgnoreGlobs = normalizeSlice(packIgnore)
 	cfg.MaxFileBytes = packMaxFileBytes
 	cfg.MaxTotalBytes = packMaxTotalBytes
+	if packBudget > 0 {
+		if limit := int64(packBudget) * 4; cfg.MaxTotalBytes == 0 || limit < cfg.MaxTotalBytes {
+			cfg.MaxTotalBytes = limit
+		}
+	}
 	cfg.RedactPatterns = normalizeSlice(packRedact)
 	cfg.Concurrency = packConcurrency
 	cfg.Compact = packCompact

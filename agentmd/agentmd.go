@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/parsabordbar/ctx3/analyzer"
+	"github.com/parsabordbar/ctx3/deps"
 	"github.com/parsabordbar/ctx3/flow"
+	"github.com/parsabordbar/ctx3/symbols"
 )
 
 // Config controls generation.
@@ -110,23 +112,125 @@ func writeArchitecture(sb *strings.Builder, root string, ctx *analyzer.ProjectCo
 		sb.WriteString("\n")
 	}
 
-	// Go call-graph packages, if any.
+	// Go call-graph packages, if any. Each line is a fact ctx3 already computed
+	// — function count, exported surface, internal imports — rather than a TODO
+	// asking a human to restate what the tool can see for itself.
 	graph, err := flow.AnalyzeFlow(flow.Config{RootDir: root})
 	if err == nil && len(graph.Packages) > 0 {
-		sb.WriteString("Go packages (from call-graph analysis):\n\n")
-		counts := make(map[string]int)
-		for _, n := range graph.Nodes {
-			counts[n.Package]++
+		if graph.Degraded {
+			sb.WriteString("_Call graph is parse-only: the module does not type-check, so some edges are missing._\n\n")
 		}
+		sb.WriteString("Go packages:\n\n")
+
+		funcs := make(map[string]int)
+		for _, n := range graph.Nodes {
+			funcs[n.Package]++
+		}
+		exports := packageExports(root)
+		imports, dirOf := packageImports(root)
+
 		for _, p := range graph.Packages {
-			fmt.Fprintf(sb, "- `%s` — %d function(s). TODO: describe responsibility.\n", p, counts[p])
+			fmt.Fprintf(sb, "- `%s` — %d function(s)", p, funcs[p])
+			if n := exports[p]; n > 0 {
+				fmt.Fprintf(sb, ", %d exported symbol(s)", n)
+			}
+			if deps := imports[dirOf[p]]; len(deps) > 0 {
+				fmt.Fprintf(sb, ". Imports %s", strings.Join(codeList(deps), ", "))
+			}
+			sb.WriteString("\n")
+		}
+
+		if leaves := leafPackages(graph.Packages, dirOf, imports); len(leaves) > 0 {
+			fmt.Fprintf(sb, "\nSelf-contained (import nothing else in this module, so they read in isolation): %s\n",
+				strings.Join(codeList(leaves), ", "))
 		}
 		if len(graph.Entries) > 0 {
 			fmt.Fprintf(sb, "\nExecution starts at: %s\n", strings.Join(codeList(graph.Entries), ", "))
 		}
-		sb.WriteString("\n> Tip: run `ctx3 flow . --mermaid` for a full call-graph diagram.\n")
+		if cycles := importCycles(root); len(cycles) > 0 {
+			sb.WriteString("\n**Import cycles** — these packages cannot be extracted independently:\n\n")
+			for _, c := range cycles {
+				fmt.Fprintf(sb, "- %s\n", strings.Join(c, " → "))
+			}
+		}
+		sb.WriteString("\n> Tip: `ctx3 flow . -p` for the package map, `ctx3 impact <symbol>` before changing one.\n")
 	}
 	sb.WriteString("\n> TODO: explain the big-picture flow that requires reading multiple files.\n\n")
+}
+
+func packageExports(root string) map[string]int {
+	counts := map[string]int{}
+	idx, err := symbols.Scan(symbols.Config{Path: root, Langs: []string{"go"}})
+	if err != nil {
+		return counts
+	}
+	for _, s := range idx.Symbols {
+		counts[s.Package]++
+	}
+	return counts
+}
+
+func packageImports(root string) (imports map[string][]string, dirOf map[string]string) {
+	imports, dirOf = map[string][]string{}, map[string]string{}
+	g, err := deps.Analyze(deps.Config{RootDir: root})
+	if err != nil {
+		return imports, dirOf
+	}
+	for _, p := range g.List {
+		var names []string
+		for _, imp := range p.Imports {
+			names = append(names, pathBase(imp))
+		}
+		sort.Strings(names)
+		dir := filepath.ToSlash(p.Dir)
+		imports[dir] = names
+		if _, seen := dirOf[p.Name]; !seen {
+			dirOf[p.Name] = dir
+		}
+	}
+	return imports, dirOf
+}
+
+// importCycles reports any circular imports, which are the one architectural
+// fact a reader cannot discover by opening a single file.
+func importCycles(root string) [][]string {
+	g, err := deps.Analyze(deps.Config{RootDir: root})
+	if err != nil {
+		return nil
+	}
+	var out [][]string
+	for _, cycle := range g.Cycles {
+		names := make([]string, len(cycle))
+		for i, p := range cycle {
+			names[i] = pathBase(p)
+		}
+		out = append(out, names)
+	}
+	return out
+}
+
+// leafPackages are those importing nothing else in the module.
+func leafPackages(pkgs []string, dirOf map[string]string, imports map[string][]string) []string {
+	var out []string
+	for _, p := range pkgs {
+		dir, known := dirOf[p]
+		if !known {
+			continue
+		}
+		if len(imports[dir]) == 0 {
+			out = append(out, p)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// pathBase is the last element of a slash-separated import path.
+func pathBase(p string) string {
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		return p[i+1:]
+	}
+	return p
 }
 
 func writeLanguages(sb *strings.Builder, ctx *analyzer.ProjectContext) {
