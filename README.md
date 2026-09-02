@@ -7,17 +7,45 @@
 [![Stars](https://img.shields.io/github/stars/parsabordbar/ctx3?style=social)](https://github.com/parsabordbar/ctx3)
 
 <p align="center">
-  <img width="200" alt="ctx3" src="https://github.com/user-attachments/assets/7cca9bd3-5587-4df0-a7c1-c5b4323d6a8e" />
+  <img width="176" alt="ctx3 pixel skull" src="assets/skull.svg" />
 </p>
 
+<h3 align="center">Read a repo the way an LLM needs it.</h3>
 
-**Context Tree (ctx3)** is a free, open-source CLI tool written in Go that helps you (and your favorite LLM) understand a codebase better by providing structured metadata about files and dependencies.
+**ctx3** is one Go binary, no config. Point it at any checkout and get the symbol index, the call graph, what a change breaks, a task-sized brief, and a single packed file for the model, each trimmed to a token budget. It reads Go precisely and TypeScript, Python, Rust, Java and Ruby by shape, and keeps working on code that does not compile. Text views are colored like your terminal; pipes, files and agents get plain text.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/parsabordbar/ctx3/main/install.sh | sh   # macOS / Linux
+go install github.com/parsabordbar/ctx3@latest                                      # or with Go
+```
+
+```text
+$ ctx3 flow . -p
+Flow map — ctx3
+
+  476 functions · 21 packages · 21 entry points · 53 package edges
+
+  cmd 🚀  (63 funcs, 20 entries)
+      ──14──▶  target
+      ──13──▶  flow
+      ──10──▶  skillwriter, symbols
+      ── 8──▶  analyzer
+      ── 7──▶  deps
+
+  flow  (52 funcs)
+      ──26──▶  style
+
+  mcp  (35 funcs)
+      ── 7──▶  flow
+      ── 2──▶  brief, db, deps, diffctx, funcs, gitfacts, symbols
+≈ 425 tokens
+```
 
 ---
 
 ## What Can It Do?
 
-ctx3 turns a repo into structured, LLM‑friendly facts — from a quick file tree to a packed artifact you can hand to a model, a Go call‑graph, a dependency chain, and a ready‑to‑commit agent context file.
+ctx3 turns a repo into structured, LLM‑friendly facts — from a quick file tree to a packed artifact you can hand to a model, a call‑graph and its reverse, a dependency chain, the context for one task or one change, and a ready‑to‑commit agent context file.
 
 ### At a glance
 
@@ -31,6 +59,9 @@ ctx3 turns a repo into structured, LLM‑friendly facts — from a quick file tr
 | [`functions`](#ctx3-functions) | Function signatures — receivers, args, returns — per file or dir |
 | [`flow`](#ctx3-flow) | Go call graph as a text tree or Mermaid flowchart |
 | [`impact`](#ctx3-impact) | Reverse call graph — everything that calls a function |
+| [`brief`](#ctx3-brief) | Context for one task — ranked symbols with source, callers and entries, under a token budget |
+| [`diff-context`](#ctx3-diff-context) | Context for one change — changed symbols, their callers, tests to run |
+| [`git`](#ctx3-git) | Repo state, recent commits, files that churn most |
 | [`db`](#ctx3-db) | Detected databases + relational schema rebuilt from the repo |
 | [`deps`](#ctx3-deps) | Internal package dependency chain + circular‑import detection |
 | [`init`](#ctx3-init) | Deterministic `AGENTS.md` / `CLAUDE.md` scaffold for coding agents |
@@ -45,14 +76,17 @@ ctx3 turns a repo into structured, LLM‑friendly facts — from a quick file tr
 ### Quick start
 
 ```bash
-go install github.com/parsabordbar/ctx3@latest
-
 ctx3                         # interactive menu — ↑/↓/Tab to pick, Enter to run
-ctx3 print .                 # see the tree
+ctx3 map .                   # every symbol with file:line
+ctx3 impact Scan             # what calls it, what breaks
+ctx3 brief "skill names"     # everything one task needs, under a budget
+ctx3 diff-context            # what my uncommitted change touches
 ctx3 pack . -o pack.xml      # pack the repo for an LLM
-ctx3 init                    # scaffold an agent context file
+ctx3 init . --as claude      # scaffold CLAUDE.md
 ctx3 skills .                # generate the agent skill bundle
 ```
+
+Every command takes `-o <file>`, `--color auto|always|never`, `--no-emoji` and `--no-tokens`; `pack`, `map`, `flow`, `brief` and `diff-context` take `--budget <tokens>`.
 
 **[USAGE.md](USAGE.md) is the task-oriented guide** — pick the job (understand a
 repo, feed an LLM, set up an agent, guard CI), copy the command. `ctx3 help
