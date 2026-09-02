@@ -58,7 +58,11 @@ Examples:
 				return err
 			}
 		default:
-			output = diffctx.RenderText(c)
+			st, err := outStyle(diffOutputPath)
+			if err != nil {
+				return err
+			}
+			output = diffctx.RenderStyled(c, st)
 		}
 		return writeOut(output, diffOutputPath, "Change context")
 	},

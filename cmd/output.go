@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/parsabordbar/ctx3/internal/style"
 	"github.com/parsabordbar/ctx3/internal/tokens"
 	toon "github.com/toon-format/toon-go"
 )
@@ -15,7 +16,17 @@ import (
 // to -o. Keeping that here is what lets a cmd file stay "parse flags, call the
 // package, hand back a string".
 
-var quietTokens bool
+var (
+	quietTokens bool
+	colorMode   string
+)
+
+func outStyle(path string) (style.Palette, error) {
+	if path != "" && path != "-" {
+		return style.Plain, nil
+	}
+	return style.Resolve(colorMode, os.Stdout)
+}
 
 func fitBudget(output string, budget int) string {
 	out, trunc := tokens.Fit(output, budget)

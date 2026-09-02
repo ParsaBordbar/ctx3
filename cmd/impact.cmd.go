@@ -61,7 +61,11 @@ Examples:
 		case impactMermaid:
 			output = flow.RenderImpactMermaid(imp)
 		default:
-			output = flow.RenderImpactText(imp)
+			st, err := outStyle(impactOutput)
+			if err != nil {
+				return err
+			}
+			output = flow.RenderImpactStyled(imp, st)
 		}
 
 		return writeOut(output, impactOutput, "Impact report")

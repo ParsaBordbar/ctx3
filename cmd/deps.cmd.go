@@ -78,7 +78,11 @@ Examples:
 		case depsMermaid:
 			output = deps.RenderMermaid(graph)
 		default:
-			output = deps.RenderText(graph)
+			st, err := outStyle(depsOutputPath)
+			if err != nil {
+				return err
+			}
+			output = deps.RenderStyled(graph, st)
 		}
 		return writeOut(output, depsOutputPath, "Dependency chain")
 	},

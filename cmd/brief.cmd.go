@@ -57,7 +57,11 @@ Examples:
 				return err
 			}
 		default:
-			output = brief.RenderText(b)
+			st, err := outStyle(briefOutputPath)
+			if err != nil {
+				return err
+			}
+			output = brief.RenderStyled(b, st)
 		}
 		return writeOut(output, briefOutputPath, "Brief")
 	},

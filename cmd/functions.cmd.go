@@ -85,7 +85,11 @@ Examples:
 		case funcsGrep:
 			output = funcs.RenderGrep(res)
 		default:
-			output = funcs.RenderText(res, funcsDocs)
+			st, err := outStyle(funcsOutput)
+			if err != nil {
+				return err
+			}
+			output = funcs.RenderStyled(res, funcsDocs, st)
 		}
 
 		return writeOut(output, funcsOutput, "Function list")

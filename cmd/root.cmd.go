@@ -123,7 +123,7 @@ const (
 	ansiBold  = "\x1b[1m"
 )
 
-func style(s, code string, color bool) string {
+func paint(s, code string, color bool) string {
 	if !color {
 		return s
 	}
@@ -134,14 +134,14 @@ func style(s, code string, color bool) string {
 func printHome(color bool) {
 	fmt.Println(banner(color))
 	for _, g := range commandGroups {
-		fmt.Printf("  %s\n", style(g.title, ansiBold, color))
+		fmt.Printf("  %s\n", paint(g.title, ansiBold, color))
 		for _, it := range g.items {
-			name := style(fmt.Sprintf("%-11s", it[0]), ansiBlue, color)
-			fmt.Printf("    %s %s\n", name, style(it[1], ansiDim, color))
+			name := paint(fmt.Sprintf("%-11s", it[0]), ansiBlue, color)
+			fmt.Printf("    %s %s\n", name, paint(it[1], ansiDim, color))
 		}
 		fmt.Println()
 	}
-	fmt.Printf("  %s\n\n", style("Run  ctx3 <command> --help  for details.", ansiDim, color))
+	fmt.Printf("  %s\n\n", paint("Run  ctx3 <command> --help  for details.", ansiDim, color))
 }
 
 func init() {
@@ -149,6 +149,7 @@ func init() {
 	contextCmd.Flags().BoolVarP(&analyzer.OutputTOON, "toon", "t", false, "Output as TOON")
 	rootCmd.Flags().BoolVar(&plainHome, "plain", false, "Print the static home screen instead of the interactive menu")
 	rootCmd.PersistentFlags().BoolVar(&quietTokens, "no-tokens", false, "Suppress the token estimate printed on stderr")
+	rootCmd.PersistentFlags().StringVar(&colorMode, "color", "auto", "Color text output: auto|always|never (auto = only on a terminal; NO_COLOR honored)")
 	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(percentageCmd)
 }

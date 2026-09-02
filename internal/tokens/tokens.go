@@ -3,12 +3,14 @@ package tokens
 import (
 	"fmt"
 	"strings"
+
+	"github.com/parsabordbar/ctx3/internal/style"
 )
 
 const bytesPerToken = 4
 
 func Estimate(s string) int {
-	return (len(s) + bytesPerToken - 1) / bytesPerToken
+	return (len(style.Strip(s)) + bytesPerToken - 1) / bytesPerToken
 }
 
 func Format(n int) string {
@@ -31,14 +33,24 @@ func Fit(s string, budget int) (string, bool) {
 	if budget <= 0 || Estimate(s) <= budget {
 		return s, false
 	}
-	marker := fmt.Sprintf("\n… truncated to fit %s tokens\n", Format(budget))
-	limit := budget*bytesPerToken - len(marker)
+	marker := fmt.Sprintf("… truncated to fit %s tokens\n", Format(budget))
+	limit := budget*bytesPerToken - len(marker) - 1
 	if limit <= 0 {
-		return marker, true
+		return "\n" + marker, true
 	}
-	cut := strings.LastIndexByte(s[:limit], '\n')
-	if cut <= 0 {
-		cut = limit
+	var out strings.Builder
+	used := 0
+	for _, line := range strings.SplitAfter(s, "\n") {
+		n := len(style.Strip(line))
+		if used+n > limit {
+			break
+		}
+		out.WriteString(line)
+		used += n
 	}
-	return s[:cut] + marker, true
+	body := out.String()
+	if body != "" && !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	return body + "\n" + marker, true
 }

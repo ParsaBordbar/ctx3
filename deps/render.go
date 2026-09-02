@@ -2,15 +2,18 @@ package deps
 
 import (
 	"fmt"
+	"github.com/parsabordbar/ctx3/internal/style"
 	"sort"
 	"strings"
 )
 
 // RenderText produces a human-readable dependency chain, internal edges first,
 // then a circular-import warning block if any cycles exist.
-func RenderText(g *Graph) string {
+func RenderText(g *Graph) string { return RenderStyled(g, style.Plain) }
+
+func RenderStyled(g *Graph, st style.Palette) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "┌── Dependency Chain: %s\n", g.Module)
+	fmt.Fprintf(&sb, "%s %s\n", st.Title("┌── Dependency Chain:"), st.Bold(g.Module))
 
 	for i, imp := range g.Order {
 		p := g.Packages[imp]
@@ -21,34 +24,34 @@ func RenderText(g *Graph) string {
 			branch = "└──"
 			child = "   "
 		}
-		fmt.Fprintf(&sb, "%s %s\n", branch, g.ShortPath(imp))
+		fmt.Fprintf(&sb, "%s %s\n", st.Dim(branch), st.Name(g.ShortPath(imp)))
 		for j, dep := range p.Imports {
 			dLast := j == len(p.Imports)-1 && len(p.External) == 0
 			b := "├─▶"
 			if dLast {
 				b = "└─▶"
 			}
-			fmt.Fprintf(&sb, "%s %s %s\n", child, b, g.ShortPath(dep))
+			fmt.Fprintf(&sb, "%s %s\n", st.Dim(child+" "+b), st.Accent(g.ShortPath(dep)))
 		}
 		if n := len(p.External); n > 0 {
-			fmt.Fprintf(&sb, "%s └── (%d external)\n", child, n)
+			fmt.Fprintf(&sb, "%s\n", st.Dim(fmt.Sprintf("%s └── (%d external)", child, n)))
 		}
 	}
 
 	if len(g.Cycles) > 0 {
-		sb.WriteString("\n⚠  Circular imports detected:\n")
+		sb.WriteString("\n" + st.Err("⚠  Circular imports detected:") + "\n")
 		for _, cyc := range g.Cycles {
 			short := make([]string, len(cyc))
 			for i, c := range cyc {
 				short[i] = g.ShortPath(c)
 			}
-			fmt.Fprintf(&sb, "   %s → %s\n", strings.Join(short, " → "), short[0])
+			fmt.Fprintf(&sb, "   %s\n", st.Err(strings.Join(short, " → ")+" → "+short[0]))
 		}
 	} else {
-		sb.WriteString("\n✓ No circular imports.\n")
+		sb.WriteString("\n" + st.Ok("✓ No circular imports.") + "\n")
 	}
 
-	fmt.Fprintf(&sb, "\n%d internal packages\n", len(g.Order))
+	sb.WriteString(st.Dim(fmt.Sprintf("\n%d internal packages", len(g.Order))) + "\n")
 	return sb.String()
 }
 

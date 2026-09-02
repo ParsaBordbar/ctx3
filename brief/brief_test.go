@@ -1,6 +1,7 @@
 package brief
 
 import (
+	"github.com/parsabordbar/ctx3/internal/style"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,5 +116,20 @@ func TestBuild_NoMatchIsNotAnError(t *testing.T) {
 	}
 	if len(b.Hits) != 0 || len(b.Notes) == 0 {
 		t.Fatalf("expected empty brief with a note, got %+v", b)
+	}
+}
+
+func TestRenderStyled_StripsToPlain(t *testing.T) {
+	dir := fixture(t)
+	b, err := Build(Config{RootDir: dir, Query: "Open"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	styled := RenderStyled(b, style.ANSI)
+	if !strings.Contains(styled, "\x1b[") {
+		t.Fatal("ANSI palette produced no escapes")
+	}
+	if style.Strip(styled) != RenderText(b) {
+		t.Fatalf("styled output must strip back to plain:\n%s\n---\n%s", style.Strip(styled), RenderText(b))
 	}
 }

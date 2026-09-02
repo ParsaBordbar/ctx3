@@ -69,11 +69,19 @@ Examples:
 		case flowPackages && flowMermaid:
 			output = flow.RenderPackageMermaid(flow.PackageGraph(graph, projectBaseName(dir)))
 		case flowPackages:
-			output = flow.RenderPackageFlow(flow.PackageGraph(graph, projectBaseName(dir)))
+			st, err := outStyle(flowOutputPath)
+			if err != nil {
+				return err
+			}
+			output = flow.RenderPackageFlowStyled(flow.PackageGraph(graph, projectBaseName(dir)), st)
 		case flowMermaid:
 			output = flow.RenderMermaid(graph)
 		default:
-			output = flow.RenderText(graph)
+			st, err := outStyle(flowOutputPath)
+			if err != nil {
+				return err
+			}
+			output = flow.RenderStyled(graph, st)
 		}
 
 		return writeOut(fitBudget(output, flowBudget), flowOutputPath, "Flow")

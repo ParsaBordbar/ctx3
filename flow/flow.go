@@ -2,6 +2,7 @@ package flow
 
 import (
 	"fmt"
+	"github.com/parsabordbar/ctx3/internal/style"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -390,8 +391,15 @@ func unique(ss []string) []string {
 // missing method call as "nothing calls this", so the caveat leads the output
 // rather than trailing it.
 func degradedBanner(g *CallGraph, indent string) string {
+	return degradedBannerStyled(g, indent, style.Plain)
+}
+
+func degradedBannerStyled(g *CallGraph, indent string, st style.Palette) string {
 	if g == nil || !g.Degraded {
 		return ""
+	}
+	if st.Enabled() {
+		return st.Warn(strings.TrimRight(degradedBanner(g, indent), "\n")) + "\n\n"
 	}
 	var sb strings.Builder
 	sb.WriteString(indent + "⚠ parse-only analysis — this tree does not type-check.\n")
@@ -408,38 +416,38 @@ func degradedBanner(g *CallGraph, indent string) string {
 
 // RenderText produces a human-readable call-tree. Starts from entry points
 // (or all exported functions if no entries are found). Honors g.MaxDepth.
-func RenderText(g *CallGraph) string {
+func RenderText(g *CallGraph) string { return RenderStyled(g, style.Plain) }
+
+func RenderStyled(g *CallGraph, st style.Palette) string {
 	var sb strings.Builder
-	sb.WriteString(degradedBanner(g, "  "))
-	sb.WriteString("┌── Code Flow\n")
+	sb.WriteString(degradedBannerStyled(g, "  ", st))
+	sb.WriteString(st.Title("┌── Code Flow") + "\n")
 
 	roots := rootKeys(g)
 
 	visited := make(map[string]bool)
 	for _, r := range roots {
-		renderTextNode(&sb, g, r, "├── ", "│   ", visited, 0)
+		renderTextNode(&sb, g, r, "├── ", "│   ", visited, 0, st)
 	}
 
-	// Summary
-	fmt.Fprintf(&sb, "\n%d functions across %d packages\n",
-		len(g.Nodes), len(g.Packages))
+	sb.WriteString(st.Dim(fmt.Sprintf("\n%d functions across %d packages", len(g.Nodes), len(g.Packages))) + "\n")
 	return sb.String()
 }
 
-func renderTextNode(sb *strings.Builder, g *CallGraph, key, prefix, childPrefix string, visited map[string]bool, depth int) {
+func renderTextNode(sb *strings.Builder, g *CallGraph, key, prefix, childPrefix string, visited map[string]bool, depth int, st style.Palette) {
 	node, ok := g.Nodes[key]
 	if !ok {
 		return
 	}
 
-	label := node.Package + "." + node.Name
+	label := st.Accent(node.Package + "." + node.Name)
 	if node.IsEntry {
 		label += " 🚀"
 	}
-	fmt.Fprintf(sb, "%s%s  (%s:%d)\n", prefix, label, node.File, node.Line)
+	fmt.Fprintf(sb, "%s%s  %s\n", st.Dim(prefix), label, st.Dim(fmt.Sprintf("(%s:%d)", node.File, node.Line)))
 
 	if visited[key] {
-		fmt.Fprintf(sb, "%s  └── [already shown]\n", childPrefix)
+		fmt.Fprintf(sb, "%s\n", st.Dim(childPrefix+"  └── [already shown]"))
 		return
 	}
 	visited[key] = true
@@ -457,7 +465,7 @@ func renderTextNode(sb *strings.Builder, g *CallGraph, key, prefix, childPrefix 
 		if isLast {
 			p, cp = childPrefix+"└── ", childPrefix+"    "
 		}
-		renderTextNode(sb, g, callee, p, cp, visited, depth+1)
+		renderTextNode(sb, g, callee, p, cp, visited, depth+1, st)
 	}
 }
 

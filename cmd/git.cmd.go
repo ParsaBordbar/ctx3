@@ -73,7 +73,11 @@ Examples:
 		case gitMarkdown:
 			output = gitfacts.RenderMarkdown(rep)
 		default:
-			output = gitfacts.RenderText(rep)
+			st, err := outStyle(gitOutputPath)
+			if err != nil {
+				return err
+			}
+			output = gitfacts.RenderStyled(rep, st)
 		}
 
 		return writeOut(output, gitOutputPath, "Repository facts")

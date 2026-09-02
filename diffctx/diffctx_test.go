@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/parsabordbar/ctx3/gitfacts"
+	"github.com/parsabordbar/ctx3/internal/style"
 )
 
 func git(t *testing.T, dir string, args ...string) {
@@ -131,5 +132,18 @@ func TestHunkParsing(t *testing.T) {
 	}
 	if m := hunkRe.FindStringSubmatch("@@ -1 +1 @@"); m == nil || m[1] != "1" || m[2] != "" {
 		t.Fatalf("got %v", m)
+	}
+}
+
+func TestRenderStyled_StripsToPlain(t *testing.T) {
+	dir := repo(t)
+	write(t, dir, "store/store.go", "package store\n\nfunc Open(name string) error {\n\tif name == \"\" {\n\t\treturn nil\n\t}\n\treturn nil\n}\n\nfunc Close() {}\n")
+	c, err := Build(Config{RootDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	styled := RenderStyled(c, style.ANSI)
+	if !strings.Contains(styled, "\x1b[") || style.Strip(styled) != RenderText(c) {
+		t.Fatalf("styled output must strip back to plain:\n%s", styled)
 	}
 }

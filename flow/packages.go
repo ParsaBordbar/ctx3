@@ -2,6 +2,7 @@ package flow
 
 import (
 	"fmt"
+	"github.com/parsabordbar/ctx3/internal/style"
 	"sort"
 	"strconv"
 	"strings"
@@ -180,20 +181,22 @@ func sortPackages(pkgs []PackageNode) {
 // outgoing edges, heaviest first, then the leaf packages as a single line.
 // Targets sharing an edge weight are collapsed onto one row, which keeps a
 // wide fan-out to three or four lines instead of a dozen.
-func RenderPackageFlow(pf *PackageFlow) string {
+func RenderPackageFlow(pf *PackageFlow) string { return RenderPackageFlowStyled(pf, style.Plain) }
+
+func RenderPackageFlowStyled(pf *PackageFlow, st style.Palette) string {
 	var sb strings.Builder
 
 	name := pf.Project
 	if name == "" {
 		name = "project"
 	}
-	sb.WriteString(degradedBanner(&CallGraph{Degraded: pf.Degraded, Notes: pf.Notes}, "  "))
-	fmt.Fprintf(&sb, "Flow map — %s\n\n", name)
-	fmt.Fprintf(&sb, "  %d functions · %d packages · %d entry %s · %d package edges\n\n",
-		pf.TotalFuncs, len(pf.Packages), pf.TotalEntries, plural(pf.TotalEntries, "point"), pf.Edges)
+	sb.WriteString(degradedBannerStyled(&CallGraph{Degraded: pf.Degraded, Notes: pf.Notes}, "  ", st))
+	fmt.Fprintf(&sb, "%s %s\n\n", st.Title("Flow map —"), st.Bold(name))
+	sb.WriteString(st.Dim(fmt.Sprintf("  %d functions · %d packages · %d entry %s · %d package edges",
+		pf.TotalFuncs, len(pf.Packages), pf.TotalEntries, plural(pf.TotalEntries, "point"), pf.Edges)) + "\n\n")
 
 	if pf.TotalFuncs == 0 {
-		sb.WriteString("  No calls resolved. Is this a Go module?\n")
+		sb.WriteString(st.Warn("  No calls resolved. Is this a Go module?") + "\n")
 		return sb.String()
 	}
 
@@ -211,16 +214,16 @@ func RenderPackageFlow(pf *PackageFlow) string {
 		if len(p.Out) == 0 {
 			continue
 		}
-		fmt.Fprintf(&sb, "  %s%s  %s\n", p.Name, entryMark(p), packageSummary(p))
+		fmt.Fprintf(&sb, "  %s%s  %s\n", st.Name(p.Name), entryMark(p), st.Dim(packageSummary(p)))
 		for _, row := range groupByWeight(p.Out) {
-			fmt.Fprintf(&sb, "      ──%*d──▶  %s\n", width, row.calls, strings.Join(row.to, ", "))
+			fmt.Fprintf(&sb, "      %s%s%s  %s\n", st.Dim("──"), st.Warn(fmt.Sprintf("%*d", width, row.calls)), st.Dim("──▶"), st.Accent(strings.Join(row.to, ", ")))
 		}
 		sb.WriteString("\n")
 	}
 
 	if leaves := pf.Leaves(); len(leaves) > 0 {
-		fmt.Fprintf(&sb, "  ── %d packages make no cross-package calls ──\n  %s\n",
-			len(leaves), strings.Join(leaves, "  "))
+		fmt.Fprintf(&sb, "%s\n  %s\n",
+			st.Dim(fmt.Sprintf("  ── %d packages make no cross-package calls ──", len(leaves))), strings.Join(leaves, "  "))
 	}
 	return sb.String()
 }

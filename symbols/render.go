@@ -2,12 +2,15 @@ package symbols
 
 import (
 	"fmt"
+	"github.com/parsabordbar/ctx3/internal/style"
 	"sort"
 	"strings"
 )
 
 // RenderText groups symbols by directory, then by kind — the skimmable default.
-func RenderText(idx *Index, docs bool) string {
+func RenderText(idx *Index, docs bool) string { return RenderStyled(idx, docs, style.Plain) }
+
+func RenderStyled(idx *Index, docs bool, st style.Palette) string {
 	if len(idx.Symbols) == 0 {
 		return "No symbols found."
 	}
@@ -20,26 +23,27 @@ func RenderText(idx *Index, docs bool) string {
 	var sb strings.Builder
 	for _, dir := range idx.Packages() {
 		syms := byDir[dir]
-		fmt.Fprintf(&sb, "%s  (%s, %d symbols)\n", dir, syms[0].Package, len(syms))
+		fmt.Fprintf(&sb, "%s  %s\n", st.Title(dir), st.Dim(fmt.Sprintf("(%s, %d symbols)", syms[0].Package, len(syms))))
 		lastKind := Kind("")
 		for _, s := range syms {
 			if s.Kind != lastKind {
-				fmt.Fprintf(&sb, "  %s\n", kindHeading(s.Kind))
+				fmt.Fprintf(&sb, "  %s\n", st.Keyword(kindHeading(s.Kind)))
 				lastKind = s.Kind
 			}
-			fmt.Fprintf(&sb, "    %-52s %s:%d\n", truncate(s.Signature, 52), s.File, s.Line)
+			fmt.Fprintf(&sb, "    %s %s\n", style.Ljust(highlightName(st, truncate(s.Signature, 52), s.Name), 52),
+				st.Dim(fmt.Sprintf("%s:%d", s.File, s.Line)))
 			if docs && s.Doc != "" {
-				fmt.Fprintf(&sb, "    %s%s\n", strings.Repeat(" ", 2), s.Doc)
+				fmt.Fprintf(&sb, "    %s%s\n", strings.Repeat(" ", 2), st.Dim(s.Doc))
 			}
 			for _, m := range s.Members {
-				fmt.Fprintf(&sb, "      · %s %s\n", m.Name, m.Type)
+				fmt.Fprintf(&sb, "      %s %s %s\n", st.Dim("·"), m.Name, st.Dim(m.Type))
 			}
 		}
 		sb.WriteByte('\n')
 	}
 
-	fmt.Fprintf(&sb, "%d symbols across %d packages (%s)\n",
-		len(idx.Symbols), len(byDir), strings.Join(Counts(idx), ", "))
+	sb.WriteString(st.Dim(fmt.Sprintf("%d symbols across %d packages (%s)",
+		len(idx.Symbols), len(byDir), strings.Join(Counts(idx), ", "))) + "\n")
 	return strings.TrimRight(sb.String(), "\n") + "\n"
 }
 
@@ -114,4 +118,15 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+func highlightName(st style.Palette, sig, name string) string {
+	if !st.Enabled() || name == "" {
+		return sig
+	}
+	i := strings.Index(sig, name)
+	if i < 0 {
+		return sig
+	}
+	return sig[:i] + st.Name(name) + sig[i+len(name):]
 }

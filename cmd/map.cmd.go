@@ -109,6 +109,13 @@ Examples:
 				return symbols.RenderText(idx, mapDocs), nil
 			}
 		}
+		styled := func() (string, error) {
+			st, err := outStyle(mapOutputPath)
+			if err != nil || !st.Enabled() || mapJSON || mapTOON || mapMarkdown || mapGrep {
+				return render()
+			}
+			return symbols.RenderStyled(idx, mapDocs, st), nil
+		}
 		output, err := render()
 		if err != nil {
 			return err
@@ -130,6 +137,9 @@ Examples:
 			}
 		}
 
+		if output, err = styled(); err != nil {
+			return err
+		}
 		return writeOut(output, mapOutputPath, "Symbol map")
 	},
 }

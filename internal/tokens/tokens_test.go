@@ -34,9 +34,16 @@ func TestFitCutsOnLineBoundary(t *testing.T) {
 	if !strings.Contains(out, "truncated to fit 50 tokens") {
 		t.Fatalf("missing marker:\n%s", out)
 	}
-	body := out[:strings.Index(out, "\n… truncated")]
+	body := strings.TrimRight(out[:strings.Index(out, "… truncated")], "\n")
 	if !strings.HasSuffix(body, "0123456789") {
 		t.Fatalf("cut mid-line: %q", body[len(body)-12:])
+	}
+	colored := strings.Repeat("\x1b[1m0123456789\x1b[0m\n", 100)
+	if Estimate(colored) != Estimate(s) {
+		t.Fatalf("escapes must not count: %d vs %d", Estimate(colored), Estimate(s))
+	}
+	if out, _ := Fit(colored, 50); Estimate(out) > 50 || !strings.Contains(out, "\x1b[1m") {
+		t.Fatalf("colored fit: %d tokens, color kept=%v", Estimate(out), strings.Contains(out, "\x1b[1m"))
 	}
 	if _, trunc := Fit(s, 0); trunc {
 		t.Fatal("zero budget must mean unlimited")

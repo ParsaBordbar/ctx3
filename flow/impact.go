@@ -2,6 +2,7 @@ package flow
 
 import (
 	"fmt"
+	"github.com/parsabordbar/ctx3/internal/style"
 	"sort"
 	"strings"
 )
@@ -150,40 +151,42 @@ func Impacted(g *CallGraph, query string, maxDepth int) (*Impact, error) {
 }
 
 // RenderImpactText draws each target with its callers fanning out above it.
-func RenderImpactText(imp *Impact) string {
+func RenderImpactText(imp *Impact) string { return RenderImpactStyled(imp, style.Plain) }
+
+func RenderImpactStyled(imp *Impact, st style.Palette) string {
 	g := imp.graph
 	rev := g.Reverse()
 
 	var sb strings.Builder
-	sb.WriteString(degradedBanner(g, "  "))
-	fmt.Fprintf(&sb, "┌── Impact of %q\n", imp.Query)
+	sb.WriteString(degradedBannerStyled(g, "  ", st))
+	fmt.Fprintf(&sb, "%s %s\n", st.Title("┌── Impact of"), st.Bold(fmt.Sprintf("%q", imp.Query)))
 
-	noCallers := "  └── no callers in this module\n"
+	noCallers := st.Dim("  └── no callers in this module") + "\n"
 	if imp.Degraded {
-		noCallers = "  └── no callers found — but this graph is parse-only, so treat that as unproven\n"
+		noCallers = st.Warn("  └── no callers found — but this graph is parse-only, so treat that as unproven") + "\n"
 	}
 
 	for _, t := range imp.Targets {
 		node := g.Nodes[t]
-		fmt.Fprintf(&sb, "\n%s  (%s:%d)\n", t, node.File, node.Line)
+		fmt.Fprintf(&sb, "\n%s  %s\n", st.Name(t), st.Dim(fmt.Sprintf("(%s:%d)", node.File, node.Line)))
 		if len(rev[t]) == 0 {
 			sb.WriteString(noCallers)
 			continue
 		}
 		visited := map[string]bool{t: true}
-		renderCallers(&sb, g, rev, t, "  ", visited, 1, imp.MaxDepth)
+		renderCallers(&sb, g, rev, t, "  ", visited, 1, imp.MaxDepth, st)
 	}
 
-	fmt.Fprintf(&sb, "\n%d %s across %d %s\n",
+	sb.WriteString(st.Dim(fmt.Sprintf("\n%d %s across %d %s",
 		len(imp.Callers), plural(len(imp.Callers), "caller"),
-		len(imp.Packages), plural(len(imp.Packages), "package"))
+		len(imp.Packages), plural(len(imp.Packages), "package"))) + "\n")
 	if len(imp.Entries) > 0 {
-		fmt.Fprintf(&sb, "reaches entry points: %s\n", strings.Join(imp.Entries, ", "))
+		fmt.Fprintf(&sb, "%s %s\n", st.Dim("reaches entry points:"), st.Ok(strings.Join(imp.Entries, ", ")))
 	}
 	return sb.String()
 }
 
-func renderCallers(sb *strings.Builder, g *CallGraph, rev map[string][]string, key, prefix string, visited map[string]bool, depth, maxDepth int) {
+func renderCallers(sb *strings.Builder, g *CallGraph, rev map[string][]string, key, prefix string, visited map[string]bool, depth, maxDepth int, st style.Palette) {
 	callers := rev[key]
 	for i, c := range callers {
 		isLast := i == len(callers)-1
@@ -193,21 +196,21 @@ func renderCallers(sb *strings.Builder, g *CallGraph, rev map[string][]string, k
 		}
 
 		node := g.Nodes[c]
-		label := c
+		label := st.Accent(c)
 		if node.IsEntry {
 			label += " 🚀"
 		}
-		fmt.Fprintf(sb, "%s%s%s  (%s:%d)\n", prefix, branch, label, node.File, node.Line)
+		fmt.Fprintf(sb, "%s%s  %s\n", st.Dim(prefix+branch), label, st.Dim(fmt.Sprintf("(%s:%d)", node.File, node.Line)))
 
 		if visited[c] {
-			fmt.Fprintf(sb, "%s└── [already shown]\n", child)
+			fmt.Fprintf(sb, "%s\n", st.Dim(child+"└── [already shown]"))
 			continue
 		}
 		visited[c] = true
 		if maxDepth > 0 && depth >= maxDepth {
 			continue
 		}
-		renderCallers(sb, g, rev, c, child, visited, depth+1, maxDepth)
+		renderCallers(sb, g, rev, c, child, visited, depth+1, maxDepth, st)
 	}
 }
 

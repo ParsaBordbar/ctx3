@@ -2,12 +2,15 @@ package funcs
 
 import (
 	"fmt"
+	"github.com/parsabordbar/ctx3/internal/style"
 	"sort"
 	"strings"
 )
 
 // RenderText groups signatures by file in source order.
-func RenderText(r *Result, withDoc bool) string {
+func RenderText(r *Result, withDoc bool) string { return RenderStyled(r, withDoc, style.Plain) }
+
+func RenderStyled(r *Result, withDoc bool, st style.Palette) string {
 	if len(r.Funcs) == 0 {
 		return "No functions found."
 	}
@@ -28,16 +31,22 @@ func RenderText(r *Result, withDoc bool) string {
 			b.WriteString("\n")
 		}
 		fns := byFile[file]
-		fmt.Fprintf(&b, "%s  (package %s, %d)\n", file, fns[0].Package, len(fns))
+		fmt.Fprintf(&b, "%s  %s\n", st.Title(file), st.Dim(fmt.Sprintf("(package %s, %d)", fns[0].Package, len(fns))))
 		for _, f := range fns {
-			fmt.Fprintf(&b, "  %4d  %s\n", f.Line, f.Signature())
+			sig := f.Signature()
+			if st.Enabled() {
+				if i := strings.Index(sig, f.Name+"("); i >= 0 {
+					sig = sig[:i] + st.Name(f.Name) + sig[i+len(f.Name):]
+				}
+			}
+			fmt.Fprintf(&b, "  %s  %s\n", st.Dim(fmt.Sprintf("%4d", f.Line)), sig)
 			if withDoc && f.Doc != "" {
-				fmt.Fprintf(&b, "        %s\n", f.Doc)
+				fmt.Fprintf(&b, "        %s\n", st.Dim(f.Doc))
 			}
 		}
 	}
 
-	fmt.Fprintf(&b, "\n%d function(s) in %d file(s).\n", len(r.Funcs), len(order))
+	b.WriteString(st.Dim(fmt.Sprintf("\n%d function(s) in %d file(s).", len(r.Funcs), len(order))) + "\n")
 	return b.String()
 }
 
